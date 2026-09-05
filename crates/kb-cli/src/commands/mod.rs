@@ -1,5 +1,7 @@
 pub mod clone_refs;
 pub mod doctor;
+pub mod done;
+pub mod export;
 pub mod import;
 pub mod init;
 pub mod link;
@@ -7,4 +9,6 @@ pub mod projects;
 pub mod pull;
 pub mod push;
 pub mod status;
+pub mod sync;
 pub mod unlink;
+pub mod work;

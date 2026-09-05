@@ -85,10 +85,23 @@ fn resolve_project(input: &str) -> Result<(String, std::path::PathBuf)> {
 
     if expanded.exists() && expanded.is_dir() {
         let name = expanded
-            .file_name()
-            .context("cannot determine project name from path")?
-            .to_string_lossy()
-            .to_string();
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.file_name().map(|s| s.to_string_lossy().to_string()))
+            .unwrap_or_else(|| input.to_string());
+
+        // Handle "." and ".." — resolve to actual directory name
+        let name = if name == "." || name == ".." {
+            std::env::current_dir()
+                .context("cannot determine current directory")?
+                .file_name()
+                .context("cannot determine current directory name")?
+                .to_string_lossy()
+                .to_string()
+        } else {
+            name
+        };
+
         return Ok((name, expanded));
     }
 

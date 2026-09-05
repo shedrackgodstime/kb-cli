@@ -1,6 +1,6 @@
 mod commands;
 
-use clap::{Parser, Subcommand, CommandFactory};
+use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use std::io::Write;
 use std::path::PathBuf;
@@ -105,8 +105,19 @@ enum Commands {
         force: bool,
     },
 
-    /// Pull knowledge-base updates and re-link projects
+    /// Sync with remote: git pull --rebase + re-link
+    Sync {
+        /// Only re-link this specific project (repeatable)
+        #[arg(long = "project")]
+        projects: Vec<String>,
+    },
+
+    /// Pull knowledge-base updates (fast-forward only)
     Pull {
+        /// Only pull and re-link this specific project (repeatable)
+        #[arg(long = "project")]
+        projects: Vec<String>,
+
         /// Re-link active projects after pulling
         #[arg(long)]
         link: bool,
@@ -116,8 +127,19 @@ enum Commands {
         no_link: bool,
     },
 
-    /// Export project memory to a portable tarball
+    /// Push changes for specific projects to remote
     Push {
+        /// Project name to push (repeatable)
+        #[arg(long = "project")]
+        projects: Vec<String>,
+
+        /// Custom commit message
+        #[arg(long, short)]
+        message: Option<String>,
+    },
+
+    /// Export project memory to a portable tarball
+    Export {
         /// Project name to export
         project: String,
 
@@ -148,6 +170,19 @@ enum Commands {
         /// Output directory (default: current directory)
         #[arg(long)]
         output: Option<PathBuf>,
+    },
+
+    /// Start working on a project (sync + link + track)
+    Work {
+        /// Project name
+        project: String,
+    },
+
+    /// Finish working: commit + push tracked projects
+    Done {
+        /// Custom commit message
+        #[arg(long, short)]
+        message: Option<String>,
     },
 }
 
@@ -194,11 +229,19 @@ fn main() -> anyhow::Result<()> {
             force,
             cli.json,
         ),
-        Commands::Pull { link, no_link } => {
-            commands::pull::run(cli.kb_root.as_deref(), link, no_link, cli.json)
+        Commands::Sync { projects } => {
+            commands::sync::run(cli.kb_root.as_deref(), &projects, cli.json)
         }
-        Commands::Push { project, output } => {
-            commands::push::run(cli.kb_root.as_deref(), &project, output.as_deref(), cli.json)
+        Commands::Pull {
+            projects,
+            link,
+            no_link,
+        } => commands::pull::run(cli.kb_root.as_deref(), &projects, link, no_link, cli.json),
+        Commands::Push { projects, message } => {
+            commands::push::run(cli.kb_root.as_deref(), &projects, message.as_deref(), cli.json)
+        }
+        Commands::Export { project, output } => {
+            commands::export::run(cli.kb_root.as_deref(), &project, output.as_deref(), cli.json)
         }
         Commands::Import { tarball, name } => {
             commands::import::run(cli.kb_root.as_deref(), &tarball, name.as_deref(), cli.json)
@@ -273,7 +316,10 @@ fn main() -> anyhow::Result<()> {
                 match shell {
                     Shell::Bash => {
                         println!("  To install:");
-                        println!("    cp {} ~/.local/share/bash-completion/completions/", path.display());
+                        println!(
+                            "    cp {} ~/.local/share/bash-completion/completions/",
+                            path.display()
+                        );
                     }
                     Shell::Zsh => {
                         println!("  To install:");
@@ -281,11 +327,17 @@ fn main() -> anyhow::Result<()> {
                     }
                     Shell::Fish => {
                         println!("  To install:");
-                        println!("    cp {} ~/.config/fish/completions/kb.fish", path.display());
+                        println!(
+                            "    cp {} ~/.config/fish/completions/kb.fish",
+                            path.display()
+                        );
                     }
                     Shell::PowerShell => {
                         println!("  To install:");
-                        println!("    cp {} $env:USERPROFILE\\Documents\\WindowsPowerShell\\Modules\\", path.display());
+                        println!(
+                            "    cp {} $env:USERPROFILE\\Documents\\WindowsPowerShell\\Modules\\",
+                            path.display()
+                        );
                     }
                     Shell::Elvish => {
                         println!("  To install:");
@@ -330,6 +382,12 @@ fn main() -> anyhow::Result<()> {
             }
 
             Ok(())
+        }
+        Commands::Work { project } => {
+            commands::work::run(cli.kb_root.as_deref(), &project, cli.json)
+        }
+        Commands::Done { message } => {
+            commands::done::run(cli.kb_root.as_deref(), message.as_deref(), cli.json)
         }
     }
 }

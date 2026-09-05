@@ -5,4 +5,5 @@ pub mod paths;
 pub mod platform;
 pub mod project;
 pub mod refs;
+pub mod state;
 pub mod sync;

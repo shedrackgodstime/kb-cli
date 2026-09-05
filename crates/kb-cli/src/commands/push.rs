@@ -4,32 +4,52 @@ use std::path::Path;
 
 use kb_core::sync;
 
-pub fn run(kb_root: Option<&Path>, project: &str, output: Option<&Path>, json: bool) -> Result<()> {
-    let dest = sync::export_project(kb_root, project, output)?;
+pub fn run(
+    kb_root: Option<&Path>,
+    projects: &[String],
+    message: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    if projects.is_empty() {
+        anyhow::bail!(
+            "no projects specified.\n\
+             Usage: kb push --project dioxus-auth\n\
+             Or:    kb push --project dioxus-auth --project kb"
+        );
+    }
+
+    let result = sync::push(kb_root, projects, message)?;
 
     if json {
         let output = serde_json::json!({
             "ok": true,
             "data": {
-                "project": project,
-                "tarball": dest,
+                "committed": result.committed,
+                "commit_message": result.commit_message,
+                "pushed": result.pushed,
+                "files_changed": result.files_changed,
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         println!();
+
+        if !result.committed {
+            println!("  {}", "Nothing to push.".dimmed());
+            println!();
+            return Ok(());
+        }
+
         println!(
             "  {} {}",
-            "Exported".bold().green(),
-            project.bold()
+            "Pushed".bold().green(),
+            projects.join(", ").bold()
         );
-        println!("  {}", dest.display());
-        println!();
         println!(
-            "  {} Copy to another machine and run: kb import {}",
-            "To sync:".dimmed(),
-            dest.display()
+            "  commit: {}",
+            result.commit_message.unwrap_or_default()
         );
+        println!("  files:  {}", result.files_changed.len());
         println!();
     }
 
