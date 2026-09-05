@@ -10,8 +10,8 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
     // Resolve project name and repo path
     let (project_name, repo_dir) = resolve_project(project_input)?;
 
-    let result = project::unlink(&root, &project_name, &repo_dir)
-        .context("failed to unlink project")?;
+    let result =
+        project::unlink(&root, &project_name, &repo_dir).context("failed to unlink project")?;
 
     if json {
         let output = serde_json::json!({
@@ -26,11 +26,7 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         println!();
-        println!(
-            "  {} {}",
-            "Unlinking".bold().yellow(),
-            project_name.bold()
-        );
+        println!("  {} {}", "Unlinking".bold().yellow(), project_name.bold());
 
         if result.scratch_removed {
             println!("  scratch      {}", "removed".red());

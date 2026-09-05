@@ -23,18 +23,15 @@ pub fn run(kb_root: Option<&Path>, json: bool) -> Result<()> {
 }
 
 /// Configure an existing knowledge-base.
-fn configure_existing(
-    root: &Path,
-    source: discovery::DiscoverySource,
-    json: bool,
-) -> Result<()> {
+fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: bool) -> Result<()> {
     // 1. Write config
     config::update(|cfg| {
         cfg.kb_root = Some(root.to_path_buf());
     })?;
 
     // 2. Setup global gitignore
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+    let home =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
     let gitignore_global = home.join(".gitignore_global");
     let gitignore_updated = setup_gitignore(&gitignore_global)?;
 
@@ -76,7 +73,10 @@ fn configure_existing(
         }
 
         if git_config_ok {
-            println!("  {}: git config core.excludesFile ✓", "Global rules".bold());
+            println!(
+                "  {}: git config core.excludesFile ✓",
+                "Global rules".bold()
+            );
         } else {
             println!(
                 "  {}: git config core.excludesFile {}",
@@ -102,7 +102,8 @@ fn configure_existing(
 
 /// Setup on a fresh machine — clone or create the knowledge-base.
 fn setup_new_machine(kb_root: Option<&Path>, json: bool) -> Result<()> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+    let home =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
     let default_path = home.join("knowledge-base");
 
     let target_path = kb_root.unwrap_or(&default_path);
@@ -134,9 +135,7 @@ fn setup_new_machine(kb_root: Option<&Path>, json: bool) -> Result<()> {
             println!("  Expected AGENTS.md and INDEX.md in the root.");
             println!();
             println!("  If you have a knowledge-base repo elsewhere:");
-            println!(
-                "    kb init --kb-root /path/to/your/knowledge-base"
-            );
+            println!("    kb init --kb-root /path/to/your/knowledge-base");
         } else {
             println!("  No knowledge-base found at {}", target_path.display());
             println!();
@@ -151,10 +150,7 @@ fn setup_new_machine(kb_root: Option<&Path>, json: bool) -> Result<()> {
                 "    {}",
                 format!("mkdir -p {}", target_path.display()).dimmed()
             );
-            println!(
-                "    {}",
-                format!("cd {}", target_path.display()).dimmed()
-            );
+            println!("    {}", format!("cd {}", target_path.display()).dimmed());
             println!("    git init");
             println!("    # Create AGENTS.md and INDEX.md");
             println!();

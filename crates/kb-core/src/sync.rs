@@ -40,11 +40,7 @@ pub struct PushResult {
 ///
 /// If `only_projects` is non-empty, only re-link those specific projects.
 /// If empty, re-link all active projects from config.
-pub fn pull(
-    kb_root: Option<&Path>,
-    link: bool,
-    only_projects: &[String],
-) -> Result<PullResult> {
+pub fn pull(kb_root: Option<&Path>, link: bool, only_projects: &[String]) -> Result<PullResult> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     // 1. Git pull
@@ -79,10 +75,7 @@ pub fn pull(
 }
 
 /// Sync: git pull --rebase + re-link. Handles diverged branches.
-pub fn sync(
-    kb_root: Option<&Path>,
-    only_projects: &[String],
-) -> Result<SyncResult> {
+pub fn sync(kb_root: Option<&Path>, only_projects: &[String]) -> Result<SyncResult> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     // 1. Fetch first
@@ -300,7 +293,8 @@ fn git_pull_ff(root: &Path) -> Result<GitPullResult> {
 
 /// Default project directory for a named project.
 fn default_project_dir(name: &str) -> Result<std::path::PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+    let home =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
     Ok(home.join("Projects").join(name))
 }
 
@@ -310,6 +304,7 @@ pub fn export_project(
     project_name: &str,
     output_path: Option<&Path>,
 ) -> Result<std::path::PathBuf> {
+    crate::paths::validate_project_name(project_name)?;
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let project_dir = root.join("projects").join(project_name);
 
@@ -370,6 +365,7 @@ pub fn import_project(
 
     // Determine project name from tarball or argument
     let name = if let Some(n) = project_name {
+        crate::paths::validate_project_name(n)?;
         n.to_string()
     } else {
         let stem = tarball
@@ -388,12 +384,14 @@ pub fn import_project(
         );
     }
 
-    // Extract tarball
+    // Extract tarball with safety flags
     let status = Command::new("tar")
         .arg("-xzf")
         .arg(tarball)
         .arg("-C")
         .arg(root.join("projects"))
+        // Security: don't follow symlinks outside the archive
+        .arg("--no-same-owner")
         .status()
         .context("failed to run tar")?;
 

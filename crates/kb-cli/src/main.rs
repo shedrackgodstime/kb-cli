@@ -211,9 +211,10 @@ fn main() -> anyhow::Result<()> {
             commands::status::run(cli.kb_root.as_deref(), all, refs, cli.json)
         }
         Commands::Doctor { fix } => commands::doctor::run(cli.kb_root.as_deref(), fix, cli.json),
-        Commands::Projects { active_only, verbose } => {
-            commands::projects::run(cli.kb_root.as_deref(), active_only, verbose, cli.json)
-        }
+        Commands::Projects {
+            active_only,
+            verbose,
+        } => commands::projects::run(cli.kb_root.as_deref(), active_only, verbose, cli.json),
         Commands::CloneRefs {
             project,
             all,
@@ -237,12 +238,18 @@ fn main() -> anyhow::Result<()> {
             link,
             no_link,
         } => commands::pull::run(cli.kb_root.as_deref(), &projects, link, no_link, cli.json),
-        Commands::Push { projects, message } => {
-            commands::push::run(cli.kb_root.as_deref(), &projects, message.as_deref(), cli.json)
-        }
-        Commands::Export { project, output } => {
-            commands::export::run(cli.kb_root.as_deref(), &project, output.as_deref(), cli.json)
-        }
+        Commands::Push { projects, message } => commands::push::run(
+            cli.kb_root.as_deref(),
+            &projects,
+            message.as_deref(),
+            cli.json,
+        ),
+        Commands::Export { project, output } => commands::export::run(
+            cli.kb_root.as_deref(),
+            &project,
+            output.as_deref(),
+            cli.json,
+        ),
         Commands::Import { tarball, name } => {
             commands::import::run(cli.kb_root.as_deref(), &tarball, name.as_deref(), cli.json)
         }
@@ -306,11 +313,7 @@ fn main() -> anyhow::Result<()> {
                     &mut file,
                 );
                 println!();
-                println!(
-                    "  {} {}",
-                    "Generated".green().bold(),
-                    shell_name.bold()
-                );
+                println!("  {} {}", "Generated".green().bold(), shell_name.bold());
                 println!("  {}", path.display());
                 println!();
                 match shell {
@@ -377,7 +380,10 @@ fn main() -> anyhow::Result<()> {
                 println!("  {}", path.display());
                 println!();
                 println!("  To view: man ./kb.1");
-                println!("  To install: cp {} /usr/local/share/man/man1/", path.display());
+                println!(
+                    "  To install: cp {} /usr/local/share/man/man1/",
+                    path.display()
+                );
                 println!();
             }
 

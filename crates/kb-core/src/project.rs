@@ -27,6 +27,7 @@ pub fn link(
     repo_dir: &Path,
     templates_dir: &Path,
 ) -> Result<LinkResult> {
+    paths::validate_project_name(project_name)?;
     let memory_dir = kb_root.join("projects").join(project_name);
 
     // 1. Ensure project memory directory exists
@@ -178,8 +179,8 @@ pub fn list_all(kb_root: &Path) -> Result<Vec<ProjectStatus>> {
     }
 
     let mut projects = vec![];
-    for entry in fs::read_dir(&projects_dir)
-        .context(format!("failed to read {}", projects_dir.display()))?
+    for entry in
+        fs::read_dir(&projects_dir).context(format!("failed to read {}", projects_dir.display()))?
     {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
@@ -211,11 +212,26 @@ fn get_handoff_age(memory_dir: &Path) -> Option<String> {
 }
 
 /// Create project memory directory from template.
-fn create_project_memory(memory_dir: &Path, project_name: &str, templates_dir: &Path) -> Result<()> {
-    let subdirs = ["decisions", "inputs", "research", "spec", "plans", "conclusions", "ref"];
+fn create_project_memory(
+    memory_dir: &Path,
+    project_name: &str,
+    templates_dir: &Path,
+) -> Result<()> {
+    let subdirs = [
+        "decisions",
+        "inputs",
+        "research",
+        "spec",
+        "plans",
+        "conclusions",
+        "ref",
+    ];
     for sub in &subdirs {
-        fs::create_dir_all(memory_dir.join(sub))
-            .context(format!("failed to create {}/{}", memory_dir.display(), sub))?;
+        fs::create_dir_all(memory_dir.join(sub)).context(format!(
+            "failed to create {}/{}",
+            memory_dir.display(),
+            sub
+        ))?;
     }
 
     // Render template files — replace <project> placeholder
@@ -261,7 +277,10 @@ fn ensure_gitignore(repo_dir: &Path) -> Result<bool> {
     let gitignore = repo_dir.join(".gitignore");
 
     if !gitignore.exists() {
-        fs::write(&gitignore, "# Knowledge base symlinks\n/scratch\n/.agent-rules\n")?;
+        fs::write(
+            &gitignore,
+            "# Knowledge base symlinks\n/scratch\n/.agent-rules\n",
+        )?;
         return Ok(true);
     }
 
@@ -298,7 +317,11 @@ fn ensure_gitignore(repo_dir: &Path) -> Result<bool> {
 }
 
 /// Ensure repo-level AGENTS.md exists, creating from template if missing.
-fn ensure_repo_agents_md(repo_dir: &Path, project_name: &str, templates_dir: &Path) -> Result<bool> {
+fn ensure_repo_agents_md(
+    repo_dir: &Path,
+    project_name: &str,
+    templates_dir: &Path,
+) -> Result<bool> {
     let agents_md = repo_dir.join("AGENTS.md");
     if agents_md.exists() {
         return Ok(false);
@@ -330,8 +353,8 @@ fn ensure_repo_agents_md(repo_dir: &Path, project_name: &str, templates_dir: &Pa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn ensure_gitignore_creates_new() {

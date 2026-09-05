@@ -38,11 +38,7 @@ pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool) -> Result<()>
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         println!();
-        println!(
-            "  {} {}",
-            "Working on".bold().cyan(),
-            project_name.bold()
-        );
+        println!("  {} {}", "Working on".bold().cyan(), project_name.bold());
         println!();
 
         // Git status
@@ -56,7 +52,11 @@ pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool) -> Result<()>
         if repo_dir.exists() {
             println!("  Link:   {} → {}", "✓".green(), repo_dir.display());
         } else {
-            println!("  Link:   {} repo not found at {}", "!".yellow(), repo_dir.display());
+            println!(
+                "  Link:   {} repo not found at {}",
+                "!".yellow(),
+                repo_dir.display()
+            );
         }
 
         // In-progress list
@@ -75,10 +75,7 @@ pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool) -> Result<()>
         }
 
         println!();
-        println!(
-            "  {} When done: kb done",
-            "Tip:".dimmed()
-        );
+        println!("  {} When done: kb done", "Tip:".dimmed());
         println!();
     }
 
@@ -86,6 +83,7 @@ pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool) -> Result<()>
 }
 
 fn default_project_dir(name: &str) -> Result<std::path::PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+    let home =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
     Ok(home.join("Projects").join(name))
 }

@@ -14,8 +14,34 @@ pub fn expand_home(path: &Path) -> Result<PathBuf> {
     }
 }
 
+/// Validate a project name — must be safe for use in path joins.
+///
+/// Rejects names containing path separators, `..`, or null bytes.
+pub fn validate_project_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("project name cannot be empty");
+    }
+    if name.contains('/') || name.contains('\\') {
+        anyhow::bail!(
+            "project name cannot contain path separators: {}",
+            name
+        );
+    }
+    if name == ".." || name == "." {
+        anyhow::bail!("project name cannot be '.' or '..'");
+    }
+    if name.contains("..") {
+        anyhow::bail!("project name cannot contain '..': {}", name);
+    }
+    if name.contains('\0') {
+        anyhow::bail!("project name cannot contain null bytes");
+    }
+    Ok(())
+}
+
 /// Resolve the default project repo path: `~/Projects/<name>`.
 pub fn default_project_dir(name: &str) -> Result<PathBuf> {
+    validate_project_name(name)?;
     let home = dirs::home_dir().context("cannot determine home directory")?;
     Ok(home.join("Projects").join(name))
 }
@@ -71,5 +97,35 @@ mod tests {
     fn normalize_display_fixes_backslashes() {
         let p = PathBuf::from("/home/user/Projects");
         assert_eq!(normalize_display(&p), "/home/user/Projects");
+    }
+
+    #[test]
+    fn validate_project_name_rejects_empty() {
+        assert!(validate_project_name("").is_err());
+    }
+
+    #[test]
+    fn validate_project_name_rejects_dotdot() {
+        assert!(validate_project_name("..").is_err());
+        assert!(validate_project_name("../etc").is_err());
+        assert!(validate_project_name("foo/../bar").is_err());
+    }
+
+    #[test]
+    fn validate_project_name_rejects_slashes() {
+        assert!(validate_project_name("foo/bar").is_err());
+        assert!(validate_project_name("foo\\bar").is_err());
+    }
+
+    #[test]
+    fn validate_project_name_rejects_null() {
+        assert!(validate_project_name("foo\0bar").is_err());
+    }
+
+    #[test]
+    fn validate_project_name_accepts_valid() {
+        assert!(validate_project_name("dioxus-auth").is_ok());
+        assert!(validate_project_name("my_project").is_ok());
+        assert!(validate_project_name("Project123").is_ok());
     }
 }

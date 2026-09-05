@@ -18,11 +18,7 @@ pub fn run(kb_root: Option<&Path>, project: &str, output: Option<&Path>, json: b
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         println!();
-        println!(
-            "  {} {}",
-            "Exported".bold().green(),
-            project.bold()
-        );
+        println!("  {} {}", "Exported".bold().green(), project.bold());
         println!("  {}", dest.display());
         println!();
         println!(

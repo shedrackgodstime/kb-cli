@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 /// Track which projects are currently "in progress" (being worked on).
 ///
@@ -13,8 +13,8 @@ pub struct WorkState {
 
 /// Path to the state file.
 fn state_path() -> Result<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
-    Ok(home.join(".kb").join("state.toml"))
+    let kb_dir = crate::config::ensure_kb_dir()?;
+    Ok(kb_dir.join("state.toml"))
 }
 
 /// Load the current work state.
@@ -48,13 +48,8 @@ pub fn load() -> Result<WorkState> {
 
 /// Save the work state.
 pub fn save(state: &WorkState) -> Result<()> {
-    let path = state_path()?;
-
-    // Ensure ~/.kb/ directory exists
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .context(format!("failed to create directory {}", parent.display()))?;
-    }
+    let kb_dir = crate::config::ensure_kb_dir()?;
+    let path = kb_dir.join("state.toml");
 
     let mut content = String::new();
     content.push_str("# kb work state — auto-generated\n");
@@ -74,6 +69,14 @@ pub fn save(state: &WorkState) -> Result<()> {
         tmp_path.display(),
         path.display()
     ))?;
+
+    // Set restrictive permissions on state file
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .context("failed to set permissions on state file")?;
+    }
 
     Ok(())
 }

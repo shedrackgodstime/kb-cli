@@ -43,10 +43,7 @@ pub fn run(
 
         if do_link && !result.linked_projects.is_empty() {
             println!();
-            println!(
-                "  Re-linked {} project(s):",
-                result.linked_projects.len()
-            );
+            println!("  Re-linked {} project(s):", result.linked_projects.len());
             for name in &result.linked_projects {
                 println!("    {} {}", "✓".green(), name.bold());
             }

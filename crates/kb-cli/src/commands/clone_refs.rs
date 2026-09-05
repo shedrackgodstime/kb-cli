@@ -32,7 +32,10 @@ pub fn run(
 
     if projects.is_empty() {
         if json {
-            println!("{}", serde_json::json!({"ok": true, "data": {"projects": []}}));
+            println!(
+                "{}",
+                serde_json::json!({"ok": true, "data": {"projects": []}})
+            );
         } else {
             println!();
             println!("  {}", "No active projects to process.".dimmed());
@@ -72,11 +75,7 @@ pub fn run(
 
         if !json {
             println!();
-            println!(
-                "  {} {}",
-                "Refs for".bold().cyan(),
-                project_name.bold()
-            );
+            println!("  {} {}", "Refs for".bold().cyan(), project_name.bold());
             println!();
         }
 
@@ -121,11 +120,7 @@ pub fn run(
                             Err(e) => total_errors.push(format!("{}: {}", status.entry.name, e)),
                         }
                     } else {
-                        print!(
-                            "  {} {} ",
-                            "→".cyan(),
-                            status.entry.name.bold()
-                        );
+                        print!("  {} {} ", "→".cyan(), status.entry.name.bold());
                         match refs::clone_ref(&status.entry, &status.local_path, shallow) {
                             Ok(()) => {
                                 println!("{}", "cloned".green());
@@ -158,11 +153,8 @@ pub fn run(
                                     "  {} {} {}",
                                     "!".yellow().bold(),
                                     status.entry.name.bold(),
-                                    format!(
-                                        "→ would re-clone ({} → {})",
-                                        actual, expected
-                                    )
-                                    .yellow()
+                                    format!("→ would re-clone ({} → {})", actual, expected)
+                                        .yellow()
                                 );
                             }
                         } else if json {
@@ -173,11 +165,7 @@ pub fn run(
                                 }
                             }
                         } else {
-                            print!(
-                                "  {} {} ",
-                                "!".yellow().bold(),
-                                status.entry.name.bold()
-                            );
+                            print!("  {} {} ", "!".yellow().bold(), status.entry.name.bold());
                             match refs::clone_ref(&status.entry, &status.local_path, shallow) {
                                 Ok(()) => {
                                     println!("{}", "re-cloned".green());
@@ -197,11 +185,7 @@ pub fn run(
                             "  {} {} {}",
                             "!".yellow().bold(),
                             status.entry.name.bold(),
-                            format!(
-                                "→ mismatch (expected {}, got {})",
-                                expected, actual
-                            )
-                            .yellow()
+                            format!("→ mismatch (expected {}, got {})", expected, actual).yellow()
                         );
                     }
                     total_mismatch += 1;
@@ -239,7 +223,11 @@ pub fn run(
                     None
                 },
                 if total_uptodate > 0 {
-                    Some(format!("{} up-to-date", total_uptodate).dimmed().to_string())
+                    Some(
+                        format!("{} up-to-date", total_uptodate)
+                            .dimmed()
+                            .to_string(),
+                    )
                 } else {
                     None
                 },

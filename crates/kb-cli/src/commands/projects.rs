@@ -62,7 +62,11 @@ pub fn run(kb_root: Option<&Path>, active_only: bool, verbose: bool, json: bool)
 
         for status in &display {
             let is_active = cfg.active_projects.contains(&status.name);
-            let status_str = if status.memory_exists { "active" } else { "missing" };
+            let status_str = if status.memory_exists {
+                "active"
+            } else {
+                "missing"
+            };
             let handoff_str = status.handoff_age.as_deref().unwrap_or("—");
 
             let extra = if verbose {

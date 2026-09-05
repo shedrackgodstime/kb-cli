@@ -18,8 +18,7 @@ pub struct RefEntry {
 /// Expects a markdown table under `## Registered References` with columns:
 /// `| Name | URL | Current local revision | Purpose / notes |`
 pub fn parse_ref_readme(path: &Path) -> Result<Vec<RefEntry>> {
-    let content = fs::read_to_string(path)
-        .context(format!("failed to read {}", path.display()))?;
+    let content = fs::read_to_string(path).context(format!("failed to read {}", path.display()))?;
 
     let mut entries = vec![];
     let mut in_table = false;
@@ -118,10 +117,7 @@ pub fn check_refs_status(kb_root: &Path, project_name: &str) -> Result<Vec<RefSt
     }
 
     let entries = parse_ref_readme(&ref_readme)?;
-    let ref_dir = kb_root
-        .join("projects")
-        .join(project_name)
-        .join("ref");
+    let ref_dir = kb_root.join("projects").join(project_name).join("ref");
 
     // Build a map of existing directories (case-insensitive) for lookup
     let existing_dirs: HashMap<String, PathBuf> = if ref_dir.exists() {
@@ -199,11 +195,7 @@ pub fn check_refs_status(kb_root: &Path, project_name: &str) -> Result<Vec<RefSt
 }
 
 /// Clone a missing ref and checkout the pinned revision.
-pub fn clone_ref(
-    entry: &RefEntry,
-    target_dir: &Path,
-    shallow: bool,
-) -> Result<()> {
+pub fn clone_ref(entry: &RefEntry, target_dir: &Path, shallow: bool) -> Result<()> {
     // Create parent if needed
     if let Some(parent) = target_dir.parent() {
         fs::create_dir_all(parent)?;
@@ -227,11 +219,7 @@ pub fn clone_ref(
     let output = cmd.output().context("failed to run git clone")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "git clone failed for {}:\n{}",
-            entry.url,
-            stderr.trim()
-        );
+        anyhow::bail!("git clone failed for {}:\n{}", entry.url, stderr.trim());
     }
 
     // Checkout pinned revision if specified
@@ -276,7 +264,13 @@ fn get_current_revision(repo_dir: &Path) -> Result<String> {
 fn sanitize_dir_name(name: &str) -> String {
     name.to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 

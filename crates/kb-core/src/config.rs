@@ -36,16 +36,39 @@ pub fn config_path() -> Result<PathBuf> {
     Ok(home.join(".kb").join("config.toml"))
 }
 
+/// Ensure `~/.kb/` directory exists with restrictive permissions.
+///
+/// On Unix, creates with 0o700 (owner-only access).
+pub fn ensure_kb_dir() -> Result<PathBuf> {
+    let home = dirs::home_dir().context("cannot determine home directory")?;
+    let kb_dir = home.join(".kb");
+
+    if !kb_dir.exists() {
+        fs::create_dir_all(&kb_dir)
+            .context(format!("failed to create directory {}", kb_dir.display()))?;
+
+        // Set restrictive permissions on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&kb_dir, fs::Permissions::from_mode(0o700))
+                .context("failed to set permissions on ~/.kb/")?;
+        }
+    }
+
+    Ok(kb_dir)
+}
+
 /// Load config from disk. Returns default config if file doesn't exist.
 pub fn load() -> Result<Config> {
     let path = config_path()?;
     if !path.exists() {
         return Ok(Config::default());
     }
-    let content =
-        fs::read_to_string(&path).context(format!("failed to read config at {}", path.display()))?;
-    let config: Config =
-        toml::from_str(&content).context(format!("failed to parse config at {}", path.display()))?;
+    let content = fs::read_to_string(&path)
+        .context(format!("failed to read config at {}", path.display()))?;
+    let config: Config = toml::from_str(&content)
+        .context(format!("failed to parse config at {}", path.display()))?;
     Ok(config)
 }
 
@@ -54,14 +77,13 @@ pub fn load() -> Result<Config> {
 /// Writes to a temp file first, then renames. If the process crashes
 /// mid-write, the original config is preserved.
 pub fn save(config: &Config) -> Result<()> {
-    let path = config_path()?;
-    let dir = path.parent().context("config path has no parent directory")?;
-    fs::create_dir_all(dir).context(format!("failed to create directory {}", dir.display()))?;
+    let kb_dir = ensure_kb_dir()?;
+    let path = kb_dir.join("config.toml");
 
     let content = toml::to_string_pretty(config).context("failed to serialize config")?;
 
     // Atomic write: write to temp file, then rename
-    let temp_path = dir.join("config.toml.tmp");
+    let temp_path = kb_dir.join("config.toml.tmp");
     fs::write(&temp_path, &content)
         .context(format!("failed to write config to {}", temp_path.display()))?;
     fs::rename(&temp_path, &path).context(format!(
@@ -69,6 +91,14 @@ pub fn save(config: &Config) -> Result<()> {
         temp_path.display(),
         path.display()
     ))?;
+
+    // Set restrictive permissions on config file
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .context("failed to set permissions on config file")?;
+    }
 
     Ok(())
 }

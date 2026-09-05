@@ -45,10 +45,7 @@ pub fn run(
             "Pushed".bold().green(),
             projects.join(", ").bold()
         );
-        println!(
-            "  commit: {}",
-            result.commit_message.unwrap_or_default()
-        );
+        println!("  commit: {}", result.commit_message.unwrap_or_default());
         println!("  files:  {}", result.files_changed.len());
         println!();
     }

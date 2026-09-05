@@ -81,8 +81,20 @@ fn test_link_and_status() {
         .stdout(predicate::str::contains("Linking"));
 
     // Verify symlinks created
-    assert!(repo.join("scratch").symlink_metadata().unwrap().file_type().is_symlink());
-    assert!(repo.join(".agent-rules").symlink_metadata().unwrap().file_type().is_symlink());
+    assert!(
+        repo.join("scratch")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(
+        repo.join(".agent-rules")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
 
     // Verify .gitignore updated
     let gitignore = fs::read_to_string(repo.join(".gitignore")).unwrap();

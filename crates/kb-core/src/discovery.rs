@@ -24,7 +24,8 @@ pub enum DiscoverySource {
 pub fn discover_kb_root(cli_flag: Option<&Path>) -> Result<(PathBuf, DiscoverySource)> {
     // 1. CLI flag
     if let Some(path) = cli_flag {
-        let resolved = path.canonicalize()
+        let resolved = path
+            .canonicalize()
             .context(format!("--kb-root path does not exist: {}", path.display()))?;
         validate_kb_root(&resolved)?;
         return Ok((resolved.clone(), DiscoverySource::CliFlag(resolved)));
@@ -33,7 +34,8 @@ pub fn discover_kb_root(cli_flag: Option<&Path>) -> Result<(PathBuf, DiscoverySo
     // 2. Environment variable
     if let Ok(val) = std::env::var("KB_ROOT") {
         let path = PathBuf::from(&val);
-        let resolved = path.canonicalize()
+        let resolved = path
+            .canonicalize()
             .context(format!("KB_ROOT path does not exist: {}", path.display()))?;
         validate_kb_root(&resolved)?;
         return Ok((resolved.clone(), DiscoverySource::EnvVar(resolved)));

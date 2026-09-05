@@ -29,11 +29,7 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         println!();
-        println!(
-            "  {} {}",
-            "Linking".bold().green(),
-            project_name.bold()
-        );
+        println!("  {} {}", "Linking".bold().green(), project_name.bold());
         println!("  Project repo:   {}", repo_dir.display());
         println!("  Project memory: {}", result.memory_dir.display());
         println!();

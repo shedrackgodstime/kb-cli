@@ -80,7 +80,7 @@ fn check_symlinks(kb_root: &Path) -> Check {
                 severity: Severity::Warn,
                 message: "skipped (config unavailable)".to_string(),
                 fix: Some("run `kb init` to fix config".to_string()),
-            }
+            };
         }
     };
 
@@ -92,9 +92,7 @@ fn check_symlinks(kb_root: &Path) -> Check {
             .projects
             .get(project_name)
             .and_then(|c| c.repo_path.clone())
-            .unwrap_or_else(|| {
-                crate::paths::default_project_dir(project_name).unwrap_or_default()
-            });
+            .unwrap_or_else(|| crate::paths::default_project_dir(project_name).unwrap_or_default());
 
         let memory_dir = kb_root.join("projects").join(project_name);
 
@@ -112,7 +110,10 @@ fn check_symlinks(kb_root: &Path) -> Check {
         let rules_link = repo_path.join(".agent-rules");
         if rules_link.exists() || rules_link.symlink_metadata().is_ok() {
             if !platform::is_symlink_to(&rules_link, &rules_target) {
-                broken.push(format!("{}: .agent-rules broken or wrong target", project_name));
+                broken.push(format!(
+                    "{}: .agent-rules broken or wrong target",
+                    project_name
+                ));
             }
         } else {
             broken.push(format!("{}: .agent-rules symlink missing", project_name));
@@ -146,7 +147,7 @@ fn check_gitignore_global() -> Check {
                 severity: Severity::Pass,
                 message: "skipped (cannot determine home)".to_string(),
                 fix: None,
-            }
+            };
         }
     };
 
@@ -167,9 +168,7 @@ fn check_gitignore_global() -> Check {
             name: "gitignore_global",
             severity: Severity::Warn,
             message: "global gitignore not configured in git".to_string(),
-            fix: Some(
-                "run: git config --global core.excludesFile ~/.gitignore_global".to_string(),
-            ),
+            fix: Some("run: git config --global core.excludesFile ~/.gitignore_global".to_string()),
         };
     }
 
@@ -178,9 +177,7 @@ fn check_gitignore_global() -> Check {
             name: "gitignore_global",
             severity: Severity::Warn,
             message: "~/.gitignore_global does not exist".to_string(),
-            fix: Some(
-                "create ~/.gitignore_global with: scratch/ .agent-rules/ .kb/".to_string(),
-            ),
+            fix: Some("create ~/.gitignore_global with: scratch/ .agent-rules/ .kb/".to_string()),
         };
     }
 
@@ -280,7 +277,7 @@ fn check_orphaned_projects(kb_root: &Path) -> Check {
                 severity: Severity::Pass,
                 message: "skipped (no config)".to_string(),
                 fix: None,
-            }
+            };
         }
     };
 

@@ -18,11 +18,7 @@ pub fn run(kb_root: Option<&Path>, tarball: &Path, name: Option<&str>, json: boo
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
         println!();
-        println!(
-            "  {} {}",
-            "Imported".bold().green(),
-            imported_name.bold()
-        );
+        println!("  {} {}", "Imported".bold().green(), imported_name.bold());
         println!(
             "  {} Run `kb link {}` to wire it up.",
             "Next:".dimmed(),

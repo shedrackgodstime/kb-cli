@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 /// Platform information for display and diagnostics.
 #[derive(Debug, Clone)]
@@ -60,8 +60,10 @@ pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
         .map(|m| m.file_type().is_symlink())
         .unwrap_or(false)
     {
-        fs::remove_file(link)
-            .context(format!("failed to remove existing symlink at {}", link.display()))?;
+        fs::remove_file(link).context(format!(
+            "failed to remove existing symlink at {}",
+            link.display()
+        ))?;
     }
 
     // Error if link is a real directory
@@ -75,8 +77,10 @@ pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
 
     // Create parent directory if needed
     if let Some(parent) = link.parent() {
-        fs::create_dir_all(parent)
-            .context(format!("failed to create parent directory for {}", link.display()))?;
+        fs::create_dir_all(parent).context(format!(
+            "failed to create parent directory for {}",
+            link.display()
+        ))?;
     }
 
     // Platform-specific symlink creation
@@ -119,8 +123,7 @@ pub fn remove_symlink(link: &Path, expected_target: &Path) -> Result<bool> {
         .unwrap_or_else(|_| expected_target.to_path_buf());
 
     if current == expected {
-        fs::remove_file(link)
-            .context(format!("failed to remove symlink at {}", link.display()))?;
+        fs::remove_file(link).context(format!("failed to remove symlink at {}", link.display()))?;
         Ok(true)
     } else {
         Ok(false)
