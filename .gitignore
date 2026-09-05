@@ -1,0 +1,9 @@
+# Build
+/target
+
+# Knowledge base symlinks
+/scratch
+/.agent-rules
+
+# Local
+.kb/

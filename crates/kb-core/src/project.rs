@@ -1,0 +1,353 @@
+use anyhow::{Context, Result};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use crate::config::{self, ProjectConfig};
+use crate::paths;
+use crate::platform;
+
+/// Result of a link operation.
+#[derive(Debug)]
+pub struct LinkResult {
+    pub project_name: String,
+    pub memory_dir: PathBuf,
+    pub scratch_link: PathBuf,
+    pub rules_link: PathBuf,
+    pub gitignore_updated: bool,
+    pub agents_md_created: bool,
+}
+
+/// Link a project repo to the knowledge-base.
+///
+/// Order: config first, then symlinks. If symlink creation fails,
+/// we clean up the config entry.
+pub fn link(
+    kb_root: &Path,
+    project_name: &str,
+    repo_dir: &Path,
+    templates_dir: &Path,
+) -> Result<LinkResult> {
+    let memory_dir = kb_root.join("projects").join(project_name);
+
+    // 1. Ensure project memory directory exists
+    if !memory_dir.exists() {
+        create_project_memory(&memory_dir, project_name, templates_dir)?;
+    }
+
+    // 2. Update config FIRST — record intent before creating symlinks
+    let config_updated = config::update(|cfg| {
+        config::ensure_active_project(cfg, project_name);
+        cfg.projects.insert(
+            project_name.to_string(),
+            ProjectConfig {
+                repo_path: Some(repo_dir.to_path_buf()),
+                ..Default::default()
+            },
+        );
+    });
+
+    if let Err(e) = config_updated {
+        // Config update failed — don't create symlinks in inconsistent state
+        return Err(e.context("failed to update config before linking"));
+    }
+
+    // 3. Create scratch symlink
+    let scratch_link = repo_dir.join("scratch");
+    if let Err(e) = platform::create_symlink(&memory_dir, &scratch_link) {
+        // Rollback config on symlink failure
+        let _ = config::update(|cfg| {
+            config::remove_active_project(cfg, project_name);
+            cfg.projects.remove(project_name);
+        });
+        return Err(e.context("failed to create scratch symlink (config rolled back)"));
+    }
+
+    // 4. Create .agent-rules symlink
+    let rules_target = kb_root.join("agent-rules");
+    let rules_link = repo_dir.join(".agent-rules");
+    if let Err(e) = platform::create_symlink(&rules_target, &rules_link) {
+        // Rollback: remove scratch symlink and config
+        let _ = platform::remove_symlink(&scratch_link, &memory_dir);
+        let _ = config::update(|cfg| {
+            config::remove_active_project(cfg, project_name);
+            cfg.projects.remove(project_name);
+        });
+        return Err(e.context("failed to create .agent-rules symlink (rolled back)"));
+    }
+
+    // 5. Ensure .gitignore protects symlinks
+    let gitignore_updated = ensure_gitignore(repo_dir)?;
+
+    // 6. Ensure repo-level AGENTS.md exists
+    let agents_md_created = ensure_repo_agents_md(repo_dir, project_name, templates_dir)?;
+
+    Ok(LinkResult {
+        project_name: project_name.to_string(),
+        memory_dir,
+        scratch_link,
+        rules_link,
+        gitignore_updated,
+        agents_md_created,
+    })
+}
+
+/// Unlink a project — remove symlinks, keep memory.
+pub fn unlink(kb_root: &Path, project_name: &str, repo_dir: &Path) -> Result<UnlinkResult> {
+    let memory_dir = kb_root.join("projects").join(project_name);
+
+    let scratch_link = repo_dir.join("scratch");
+    let rules_link = repo_dir.join(".agent-rules");
+
+    let scratch_removed = platform::remove_symlink(&scratch_link, &memory_dir)?;
+    let rules_target = kb_root.join("agent-rules");
+    let rules_removed = platform::remove_symlink(&rules_link, &rules_target)?;
+
+    // Remove from active projects
+    config::update(|cfg| {
+        config::remove_active_project(cfg, project_name);
+    })?;
+
+    Ok(UnlinkResult {
+        project_name: project_name.to_string(),
+        scratch_removed,
+        rules_removed,
+    })
+}
+
+/// Result of an unlink operation.
+#[derive(Debug)]
+pub struct UnlinkResult {
+    pub project_name: String,
+    pub scratch_removed: bool,
+    pub rules_removed: bool,
+}
+
+/// Status of a single project.
+#[derive(Debug, Clone)]
+pub struct ProjectStatus {
+    pub name: String,
+    pub memory_exists: bool,
+    pub memory_path: PathBuf,
+    pub repo_path: Option<PathBuf>,
+    pub scratch_healthy: Option<bool>,
+    pub rules_healthy: Option<bool>,
+    pub handoff_age: Option<String>,
+}
+
+/// Get status of a single project.
+pub fn status(kb_root: &Path, project_name: &str) -> Result<ProjectStatus> {
+    let memory_dir = kb_root.join("projects").join(project_name);
+    let memory_exists = memory_dir.exists();
+
+    // Check config for repo path
+    let cfg = config::load()?;
+    let project_cfg = cfg.projects.get(project_name);
+    let repo_path = project_cfg
+        .and_then(|c| c.repo_path.clone())
+        .or_else(|| paths::default_project_dir(project_name).ok());
+
+    let scratch_healthy = repo_path.as_ref().map(|repo| {
+        let link = repo.join("scratch");
+        platform::is_symlink_to(&link, &memory_dir)
+    });
+
+    let rules_target = kb_root.join("agent-rules");
+    let rules_healthy = repo_path.as_ref().map(|repo| {
+        let link = repo.join(".agent-rules");
+        platform::is_symlink_to(&link, &rules_target)
+    });
+
+    let handoff_age = get_handoff_age(&memory_dir);
+
+    Ok(ProjectStatus {
+        name: project_name.to_string(),
+        memory_exists,
+        memory_path: memory_dir,
+        repo_path,
+        scratch_healthy,
+        rules_healthy,
+        handoff_age,
+    })
+}
+
+/// List all projects in the knowledge-base.
+pub fn list_all(kb_root: &Path) -> Result<Vec<ProjectStatus>> {
+    let projects_dir = kb_root.join("projects");
+    if !projects_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut projects = vec![];
+    for entry in fs::read_dir(&projects_dir)
+        .context(format!("failed to read {}", projects_dir.display()))?
+    {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == "README.md" || name.starts_with('.') {
+                continue;
+            }
+            projects.push(status(kb_root, &name)?);
+        }
+    }
+    projects.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(projects)
+}
+
+/// Get human-readable age of handoff file.
+fn get_handoff_age(memory_dir: &Path) -> Option<String> {
+    let handoff = memory_dir.join("HANDOFF.md");
+    let meta = fs::metadata(&handoff).ok()?;
+    let modified = meta.modified().ok()?;
+    let duration = modified.elapsed().ok()?;
+    let days = duration.as_secs() / 86400;
+    if days == 0 {
+        Some("today".to_string())
+    } else if days == 1 {
+        Some("1 day ago".to_string())
+    } else {
+        Some(format!("{} days ago", days))
+    }
+}
+
+/// Create project memory directory from template.
+fn create_project_memory(memory_dir: &Path, project_name: &str, templates_dir: &Path) -> Result<()> {
+    let subdirs = ["decisions", "inputs", "research", "spec", "plans", "conclusions", "ref"];
+    for sub in &subdirs {
+        fs::create_dir_all(memory_dir.join(sub))
+            .context(format!("failed to create {}/{}", memory_dir.display(), sub))?;
+    }
+
+    // Render template files — replace <project> placeholder
+    // Also replace any hardcoded home path with actual $HOME
+    let home = dirs::home_dir().unwrap_or_default();
+    let home_str = home.to_string_lossy().to_string();
+
+    let render = |content: &str| -> String {
+        content
+            .replace("<project>", project_name)
+            .replace("/home/kristency", &home_str)
+    };
+
+    let readme_template = templates_dir.join("README.md");
+    if readme_template.exists() {
+        let content = fs::read_to_string(&readme_template)?;
+        fs::write(memory_dir.join("README.md"), render(&content))?;
+    }
+
+    let agents_template = templates_dir.join("AGENTS.md");
+    if agents_template.exists() {
+        let content = fs::read_to_string(&agents_template)?;
+        fs::write(memory_dir.join("AGENTS.md"), render(&content))?;
+    }
+
+    let handoff_template = templates_dir.join("HANDOFF.md");
+    if handoff_template.exists() {
+        let content = fs::read_to_string(&handoff_template)?;
+        fs::write(memory_dir.join("HANDOFF.md"), render(&content))?;
+    }
+
+    let ref_readme_template = templates_dir.join("ref-README.md");
+    if ref_readme_template.exists() {
+        let content = fs::read_to_string(&ref_readme_template)?;
+        fs::write(memory_dir.join("ref").join("README.md"), render(&content))?;
+    }
+
+    Ok(())
+}
+
+/// Ensure .gitignore in project repo contains `/scratch` and `/.agent-rules`.
+fn ensure_gitignore(repo_dir: &Path) -> Result<bool> {
+    let gitignore = repo_dir.join(".gitignore");
+
+    if !gitignore.exists() {
+        fs::write(&gitignore, "# Knowledge base symlinks\n/scratch\n/.agent-rules\n")?;
+        return Ok(true);
+    }
+
+    let content = fs::read_to_string(&gitignore)?;
+    let lines: Vec<&str> = content.lines().collect();
+
+    let has_scratch = lines.iter().any(|l| {
+        let trimmed = l.trim();
+        trimmed == "/scratch" || trimmed == "scratch" || trimmed == "/scratch/"
+    });
+    let has_rules = lines.iter().any(|l| {
+        let trimmed = l.trim();
+        trimmed == "/.agent-rules" || trimmed == ".agent-rules" || trimmed == "/.agent-rules/"
+    });
+
+    let mut updated = false;
+    let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+
+    if !has_scratch {
+        new_lines.push("/scratch".to_string());
+        updated = true;
+    }
+    if !has_rules {
+        new_lines.push("/.agent-rules".to_string());
+        updated = true;
+    }
+
+    if updated {
+        new_lines.push(String::new());
+        fs::write(&gitignore, new_lines.join("\n"))?;
+    }
+
+    Ok(updated)
+}
+
+/// Ensure repo-level AGENTS.md exists, creating from template if missing.
+fn ensure_repo_agents_md(repo_dir: &Path, project_name: &str, templates_dir: &Path) -> Result<bool> {
+    let agents_md = repo_dir.join("AGENTS.md");
+    if agents_md.exists() {
+        return Ok(false);
+    }
+
+    let template = templates_dir.join("repo-AGENTS.md");
+    if template.exists() {
+        let content = fs::read_to_string(&template)?;
+        let rendered = content.replace("<project>", project_name);
+        fs::write(&agents_md, &rendered)?;
+        return Ok(true);
+    }
+
+    // Fallback: minimal AGENTS.md
+    let content = format!(
+        "# {} - AI Agent Guide\n\n\
+         Project memory lives in:\n\n\
+         - `scratch/` - private handoff, research, specs, plans, and reference registry.\n\n\
+         Shared reusable rules live in:\n\n\
+         - `.agent-rules/behavior/agent-standards.md`\n\
+         - `.agent-rules/skills/<language>/core/SKILL.md`\n\n\
+         Read `scratch/HANDOFF.md` first for current project state.\n",
+        project_name
+    );
+    fs::write(&agents_md, &content)?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use std::fs;
+
+    #[test]
+    fn ensure_gitignore_creates_new() {
+        let dir = TempDir::new().unwrap();
+        let result = ensure_gitignore(dir.path()).unwrap();
+        assert!(result);
+        let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(content.contains("/scratch"));
+        assert!(content.contains("/.agent-rules"));
+    }
+
+    #[test]
+    fn ensure_gitignore_idempotent() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".gitignore"), "/scratch\n/.agent-rules\n").unwrap();
+        let result = ensure_gitignore(dir.path()).unwrap();
+        assert!(!result);
+    }
+}
