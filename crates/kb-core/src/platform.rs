@@ -54,6 +54,28 @@ pub fn detect_platform() -> PlatformInfo {
 /// If `link` already exists as a symlink, updates it.
 /// If `link` exists as a real directory, returns an error.
 pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
+    // Validate target exists and is accessible
+    if !target.exists() {
+        anyhow::bail!(
+            "symlink target does not exist: {}",
+            target.display()
+        );
+    }
+
+    // Validate target is within expected boundaries (not /tmp or /proc etc.)
+    if let Ok(canonical) = target.canonicalize() {
+        let target_str = canonical.to_string_lossy();
+        let bad_prefixes = ["/proc", "/sys", "/dev"];
+        for prefix in &bad_prefixes {
+            if target_str.starts_with(prefix) {
+                anyhow::bail!(
+                    "symlink target must be in a real filesystem, not {}",
+                    prefix
+                );
+            }
+        }
+    }
+
     // Remove existing symlink if present
     if link
         .symlink_metadata()

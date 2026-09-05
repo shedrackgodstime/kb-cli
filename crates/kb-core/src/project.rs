@@ -245,28 +245,35 @@ fn create_project_memory(
             .replace("/home/kristency", &home_str)
     };
 
+    let write_atomic = |dest: &Path, content: &str| -> Result<()> {
+        let tmp = dest.with_extension("tmp");
+        fs::write(&tmp, content)?;
+        fs::rename(&tmp, dest)?;
+        Ok(())
+    };
+
     let readme_template = templates_dir.join("README.md");
     if readme_template.exists() {
         let content = fs::read_to_string(&readme_template)?;
-        fs::write(memory_dir.join("README.md"), render(&content))?;
+        write_atomic(&memory_dir.join("README.md"), &render(&content))?;
     }
 
     let agents_template = templates_dir.join("AGENTS.md");
     if agents_template.exists() {
         let content = fs::read_to_string(&agents_template)?;
-        fs::write(memory_dir.join("AGENTS.md"), render(&content))?;
+        write_atomic(&memory_dir.join("AGENTS.md"), &render(&content))?;
     }
 
     let handoff_template = templates_dir.join("HANDOFF.md");
     if handoff_template.exists() {
         let content = fs::read_to_string(&handoff_template)?;
-        fs::write(memory_dir.join("HANDOFF.md"), render(&content))?;
+        write_atomic(&memory_dir.join("HANDOFF.md"), &render(&content))?;
     }
 
     let ref_readme_template = templates_dir.join("ref-README.md");
     if ref_readme_template.exists() {
         let content = fs::read_to_string(&ref_readme_template)?;
-        fs::write(memory_dir.join("ref").join("README.md"), render(&content))?;
+        write_atomic(&memory_dir.join("ref").join("README.md"), &render(&content))?;
     }
 
     Ok(())
@@ -277,10 +284,12 @@ fn ensure_gitignore(repo_dir: &Path) -> Result<bool> {
     let gitignore = repo_dir.join(".gitignore");
 
     if !gitignore.exists() {
+        let tmp = gitignore.with_extension("tmp");
         fs::write(
-            &gitignore,
+            &tmp,
             "# Knowledge base symlinks\n/scratch\n/.agent-rules\n",
         )?;
+        fs::rename(&tmp, &gitignore)?;
         return Ok(true);
     }
 
@@ -310,7 +319,9 @@ fn ensure_gitignore(repo_dir: &Path) -> Result<bool> {
 
     if updated {
         new_lines.push(String::new());
-        fs::write(&gitignore, new_lines.join("\n"))?;
+        let tmp = gitignore.with_extension("tmp");
+        fs::write(&tmp, new_lines.join("\n"))?;
+        fs::rename(&tmp, &gitignore)?;
     }
 
     Ok(updated)
@@ -331,7 +342,9 @@ fn ensure_repo_agents_md(
     if template.exists() {
         let content = fs::read_to_string(&template)?;
         let rendered = content.replace("<project>", project_name);
-        fs::write(&agents_md, &rendered)?;
+        let tmp = agents_md.with_extension("tmp");
+        fs::write(&tmp, &rendered)?;
+        fs::rename(&tmp, &agents_md)?;
         return Ok(true);
     }
 
@@ -346,7 +359,9 @@ fn ensure_repo_agents_md(
          Read `scratch/HANDOFF.md` first for current project state.\n",
         project_name
     );
-    fs::write(&agents_md, &content)?;
+    let tmp = agents_md.with_extension("tmp");
+    fs::write(&tmp, &content)?;
+    fs::rename(&tmp, &agents_md)?;
     Ok(true)
 }
 
