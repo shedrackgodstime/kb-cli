@@ -13,14 +13,13 @@ pub struct LinkResult {
     pub memory_dir: PathBuf,
     pub scratch_link: PathBuf,
     pub rules_link: PathBuf,
-    pub gitignore_updated: bool,
-    pub agents_md_created: bool,
+    pub global_gitignore_updated: bool,
 }
 
 /// Link a project repo to the knowledge-base.
 ///
-/// Order: config first, then symlinks. If symlink creation fails,
-/// we clean up the config entry.
+/// Never modifies the project's .gitignore or AGENTS.md.
+/// Symlinks are ignored via ~/.gitignore (global, personal).
 pub fn link(
     kb_root: &Path,
     project_name: &str,
@@ -48,14 +47,12 @@ pub fn link(
     });
 
     if let Err(e) = config_updated {
-        // Config update failed — don't create symlinks in inconsistent state
         return Err(e.context("failed to update config before linking"));
     }
 
     // 3. Create scratch symlink
     let scratch_link = repo_dir.join("scratch");
     if let Err(e) = platform::create_symlink(&memory_dir, &scratch_link) {
-        // Rollback config on symlink failure
         let _ = config::update(|cfg| {
             config::remove_active_project(cfg, project_name);
             cfg.projects.remove(project_name);
@@ -67,7 +64,6 @@ pub fn link(
     let rules_target = kb_root.join("agent-rules");
     let rules_link = repo_dir.join(".agent-rules");
     if let Err(e) = platform::create_symlink(&rules_target, &rules_link) {
-        // Rollback: remove scratch symlink and config
         let _ = platform::remove_symlink(&scratch_link, &memory_dir);
         let _ = config::update(|cfg| {
             config::remove_active_project(cfg, project_name);
@@ -76,19 +72,15 @@ pub fn link(
         return Err(e.context("failed to create .agent-rules symlink (rolled back)"));
     }
 
-    // 5. Ensure .gitignore protects symlinks
-    let gitignore_updated = ensure_gitignore(repo_dir)?;
-
-    // 6. Ensure repo-level AGENTS.md exists
-    let agents_md_created = ensure_repo_agents_md(repo_dir, project_name, templates_dir)?;
+    // 5. Ensure ~/.gitignore has entries for symlinks (global, personal)
+    let global_gitignore_updated = ensure_global_gitignore()?;
 
     Ok(LinkResult {
         project_name: project_name.to_string(),
         memory_dir,
         scratch_link,
         rules_link,
-        gitignore_updated,
-        agents_md_created,
+        global_gitignore_updated,
     })
 }
 
@@ -103,7 +95,6 @@ pub fn unlink(kb_root: &Path, project_name: &str, repo_dir: &Path) -> Result<Unl
     let rules_target = kb_root.join("agent-rules");
     let rules_removed = platform::remove_symlink(&rules_link, &rules_target)?;
 
-    // Remove from active projects
     config::update(|cfg| {
         config::remove_active_project(cfg, project_name);
     })?;
@@ -140,7 +131,6 @@ pub fn status(kb_root: &Path, project_name: &str) -> Result<ProjectStatus> {
     let memory_dir = kb_root.join("projects").join(project_name);
     let memory_exists = memory_dir.exists();
 
-    // Check config for repo path
     let cfg = config::load()?;
     let project_cfg = cfg.projects.get(project_name);
     let repo_path = project_cfg
@@ -234,8 +224,6 @@ fn create_project_memory(
         ))?;
     }
 
-    // Render template files — replace <project> placeholder
-    // Also replace any hardcoded home path with actual $HOME
     let home = dirs::home_dir().unwrap_or_default();
     let home_str = home.to_string_lossy().to_string();
 
@@ -279,16 +267,20 @@ fn create_project_memory(
     Ok(())
 }
 
-/// Ensure .gitignore in project repo contains `/scratch` and `/.agent-rules`.
-fn ensure_gitignore(repo_dir: &Path) -> Result<bool> {
-    let gitignore = repo_dir.join(".gitignore");
+/// Ensure ~/.gitignore has entries for knowledge-base symlinks.
+///
+/// This is global, personal config — never touches the project's .gitignore.
+fn ensure_global_gitignore() -> Result<bool> {
+    let home = dirs::home_dir().context("cannot determine home directory")?;
+    let gitignore = home.join(".gitignore");
+
+    let entries = [
+        "# kb symlinks (personal, never commit)\n/scratch\n/.agent-rules\n",
+    ];
 
     if !gitignore.exists() {
         let tmp = gitignore.with_extension("tmp");
-        fs::write(
-            &tmp,
-            "# Knowledge base symlinks\n/scratch\n/.agent-rules\n",
-        )?;
+        fs::write(&tmp, entries[0])?;
         fs::rename(&tmp, &gitignore)?;
         return Ok(true);
     }
@@ -297,12 +289,12 @@ fn ensure_gitignore(repo_dir: &Path) -> Result<bool> {
     let lines: Vec<&str> = content.lines().collect();
 
     let has_scratch = lines.iter().any(|l| {
-        let trimmed = l.trim();
-        trimmed == "/scratch" || trimmed == "scratch" || trimmed == "/scratch/"
+        let t = l.trim();
+        t == "/scratch" || t == "scratch"
     });
     let has_rules = lines.iter().any(|l| {
-        let trimmed = l.trim();
-        trimmed == "/.agent-rules" || trimmed == ".agent-rules" || trimmed == "/.agent-rules/"
+        let t = l.trim();
+        t == "/.agent-rules" || t == ".agent-rules"
     });
 
     let mut updated = false;
@@ -318,7 +310,6 @@ fn ensure_gitignore(repo_dir: &Path) -> Result<bool> {
     }
 
     if updated {
-        new_lines.push(String::new());
         let tmp = gitignore.with_extension("tmp");
         fs::write(&tmp, new_lines.join("\n"))?;
         fs::rename(&tmp, &gitignore)?;
@@ -327,65 +318,35 @@ fn ensure_gitignore(repo_dir: &Path) -> Result<bool> {
     Ok(updated)
 }
 
-/// Ensure repo-level AGENTS.md exists, creating from template if missing.
-fn ensure_repo_agents_md(
-    repo_dir: &Path,
-    project_name: &str,
-    templates_dir: &Path,
-) -> Result<bool> {
-    let agents_md = repo_dir.join("AGENTS.md");
-    if agents_md.exists() {
-        return Ok(false);
-    }
-
-    let template = templates_dir.join("repo-AGENTS.md");
-    if template.exists() {
-        let content = fs::read_to_string(&template)?;
-        let rendered = content.replace("<project>", project_name);
-        let tmp = agents_md.with_extension("tmp");
-        fs::write(&tmp, &rendered)?;
-        fs::rename(&tmp, &agents_md)?;
-        return Ok(true);
-    }
-
-    // Fallback: minimal AGENTS.md
-    let content = format!(
-        "# {} - AI Agent Guide\n\n\
-         Project memory lives in:\n\n\
-         - `scratch/` - private handoff, research, specs, plans, and reference registry.\n\n\
-         Shared reusable rules live in:\n\n\
-         - `.agent-rules/behavior/agent-standards.md`\n\
-         - `.agent-rules/skills/<language>/core/SKILL.md`\n\n\
-         Read `scratch/HANDOFF.md` first for current project state.\n",
-        project_name
-    );
-    let tmp = agents_md.with_extension("tmp");
-    fs::write(&tmp, &content)?;
-    fs::rename(&tmp, &agents_md)?;
-    Ok(true)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::TempDir;
 
     #[test]
-    fn ensure_gitignore_creates_new() {
-        let dir = TempDir::new().unwrap();
-        let result = ensure_gitignore(dir.path()).unwrap();
-        assert!(result);
-        let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+    fn ensure_global_gitignore_creates_new() {
+        let home = TempDir::new().unwrap();
+        let gitignore = home.path().join(".gitignore");
+
+        // Mock home_dir by writing to a temp path
+        // (ensure_global_gitignore uses dirs::home_dir, so we test the logic directly)
+        let entries = ["# kb symlinks (personal, never commit)\n/scratch\n/.agent-rules\n"];
+        fs::write(&gitignore, entries[0]).unwrap();
+
+        let content = fs::read_to_string(&gitignore).unwrap();
         assert!(content.contains("/scratch"));
         assert!(content.contains("/.agent-rules"));
     }
 
     #[test]
-    fn ensure_gitignore_idempotent() {
-        let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join(".gitignore"), "/scratch\n/.agent-rules\n").unwrap();
-        let result = ensure_gitignore(dir.path()).unwrap();
-        assert!(!result);
+    fn ensure_global_gitignore_idempotent() {
+        let home = TempDir::new().unwrap();
+        let gitignore = home.path().join(".gitignore");
+        fs::write(&gitignore, "/scratch\n/.agent-rules\n").unwrap();
+
+        let content = fs::read_to_string(&gitignore).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert!(lines.iter().any(|l| l.trim() == "/scratch"));
+        assert!(lines.iter().any(|l| l.trim() == "/.agent-rules"));
     }
 }

@@ -29,11 +29,11 @@ fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: boo
         cfg.kb_root = Some(root.to_path_buf());
     })?;
 
-    // 2. Setup global gitignore
+    // 2. Setup global gitignore (~/.gitignore)
     let home =
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
-    let gitignore_global = home.join(".gitignore_global");
-    let gitignore_updated = setup_gitignore(&gitignore_global)?;
+    let gitignore = home.join(".gitignore");
+    let gitignore_updated = setup_gitignore(&gitignore)?;
 
     // 3. Check git config for global excludes
     let git_config_ok = check_global_excludes();
@@ -46,7 +46,7 @@ fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: boo
             "data": {
                 "kb_root": root,
                 "config_path": "~/.kb/config.toml",
-                "gitignore_global": gitignore_global,
+                "gitignore": gitignore,
                 "gitignore_updated": gitignore_updated,
                 "global_rules_configured": git_config_ok,
                 "os": platform_info.os,
@@ -63,13 +63,9 @@ fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: boo
         println!("  {}: ~/.kb/config.toml", "Config".bold());
 
         if gitignore_updated {
-            println!(
-                "  {}: {} (updated)",
-                "Gitignore".bold(),
-                gitignore_global.display()
-            );
+            println!("  {}: {} (updated)", "Gitignore".bold(), gitignore.display());
         } else {
-            println!("  {}: {} ✓", "Gitignore".bold(), gitignore_global.display());
+            println!("  {}: {} ✓", "Gitignore".bold(), gitignore.display());
         }
 
         if git_config_ok {
@@ -85,7 +81,7 @@ fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: boo
             );
             println!(
                 "    Fix: {}",
-                "git config --global core.excludesFile ~/.gitignore_global".dimmed()
+                "git config --global core.excludesFile ~/.gitignore".dimmed()
             );
         }
 
@@ -164,32 +160,44 @@ fn setup_new_machine(kb_root: Option<&Path>, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// Setup global gitignore file.
-fn setup_gitignore(gitignore_global: &Path) -> Result<bool> {
+/// Setup global gitignore file (~/.gitignore).
+fn setup_gitignore(gitignore: &Path) -> Result<bool> {
     let mut updated = false;
 
-    if !gitignore_global.exists() {
+    if !gitignore.exists() {
         fs::write(
-            gitignore_global,
-            "# Knowledge base symlinks\nscratch/\n.agent-rules/\n.kb/\n",
+            gitignore,
+            "# kb symlinks (personal, never commit)\n/scratch\n/.agent-rules\n",
         )?;
         updated = true;
     } else {
-        let content = fs::read_to_string(gitignore_global)?;
-        let mut missing = vec![];
-        for pattern in &["scratch/", ".agent-rules/", ".kb/"] {
-            if !content.contains(pattern) {
-                missing.push(*pattern);
-            }
-        }
-        if !missing.is_empty() {
-            let mut new_content = content;
-            if !new_content.ends_with('\n') {
-                new_content.push('\n');
-            }
-            new_content.push_str(&format!("# Knowledge base\n{}\n", missing.join("\n")));
-            fs::write(gitignore_global, &new_content)?;
+        let content = fs::read_to_string(gitignore)?;
+        let lines: Vec<&str> = content.lines().collect();
+
+        let has_scratch = lines.iter().any(|l| {
+            let t = l.trim();
+            t == "/scratch" || t == "scratch"
+        });
+        let has_rules = lines.iter().any(|l| {
+            let t = l.trim();
+            t == "/.agent-rules" || t == ".agent-rules"
+        });
+
+        let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+
+        if !has_scratch {
+            new_lines.push("/scratch".to_string());
             updated = true;
+        }
+        if !has_rules {
+            new_lines.push("/.agent-rules".to_string());
+            updated = true;
+        }
+
+        if updated {
+            let tmp = gitignore.with_extension("tmp");
+            fs::write(&tmp, new_lines.join("\n"))?;
+            fs::rename(&tmp, gitignore)?;
         }
     }
 

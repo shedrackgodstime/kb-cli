@@ -6,15 +6,24 @@ Cross-platform CLI for managing a private knowledge-base ecosystem.
 
 ## Install
 
-```bash
-# From source (requires Rust)
-cargo install --path .
+**Unix / macOS:**
 
-# Or build directly
+```bash
+curl -fsSL https://raw.githubusercontent.com/shedrackgodstime/kb-cli/master/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/shedrackgodstime/kb-cli/master/install.ps1 | iex
+```
+
+**From source (requires Rust):**
+
+```bash
 git clone git@github.com:shedrackgodstime/kb-cli.git
 cd kb-cli
-cargo build --release
-# binary at target/release/kb
+cargo install --path .
 ```
 
 ## Quick Start
@@ -90,6 +99,16 @@ active_projects = ["dioxus-auth", "kb"]
 - `--json` — machine-readable JSON output
 - `--verbose` / `--quiet` — verbosity
 - `--kb-root` — override KB root discovery
+
+## Windows Notes
+
+Windows requires **Developer Mode** or **Administrator privileges** to create symlinks.
+
+To enable Developer Mode:
+1. Open Settings → System → For developers
+2. Toggle "Developer Mode" on
+
+Without this, `kb link` will fail with a privilege error.
 
 ## Shell Completions
 

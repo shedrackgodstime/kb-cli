@@ -96,10 +96,13 @@ fn test_link_and_status() {
             .is_symlink()
     );
 
-    // Verify .gitignore updated
-    let gitignore = fs::read_to_string(repo.join(".gitignore")).unwrap();
+    // Verify global ~/.gitignore updated (not project .gitignore)
+    let gitignore = fs::read_to_string(home_dir.path().join(".gitignore")).unwrap();
     assert!(gitignore.contains("/scratch"));
     assert!(gitignore.contains("/.agent-rules"));
+
+    // Verify project .gitignore was NOT modified
+    assert!(!repo.join(".gitignore").exists());
 
     // Status should show the project
     kb_bin()

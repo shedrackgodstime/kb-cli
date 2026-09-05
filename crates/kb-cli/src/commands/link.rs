@@ -22,8 +22,7 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
                 "memory_dir": result.memory_dir,
                 "scratch_link": result.scratch_link,
                 "rules_link": result.rules_link,
-                "gitignore_updated": result.gitignore_updated,
-                "agents_md_created": result.agents_md_created,
+                "global_gitignore_updated": result.global_gitignore_updated,
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
@@ -44,17 +43,18 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
             root.join("agent-rules").display()
         );
 
-        if result.gitignore_updated {
-            println!("  .gitignore   {} (updated)", "✓".green());
+        if result.global_gitignore_updated {
+            println!("  ~/.gitignore  {} updated", "✓".green());
         } else {
-            println!("  .gitignore   {} protected", "✓".green());
+            println!("  ~/.gitignore  {} already configured", "✓".green());
         }
 
-        if result.agents_md_created {
-            println!("  AGENTS.md    {} created", "✓".green());
-        } else {
-            println!("  AGENTS.md    {} exists", "✓".green());
-        }
+        println!();
+        println!(
+            "  {} Shared files (.gitignore, AGENTS.md) were NOT modified.",
+            "ℹ".blue()
+        );
+        println!("  Symlinks are ignored via your global ~/.gitignore.");
 
         // Check if registered in INDEX.md
         let index_path = root.join("INDEX.md");
