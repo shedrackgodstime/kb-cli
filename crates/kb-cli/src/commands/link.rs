@@ -23,6 +23,7 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
                 "scratch_link": result.scratch_link,
                 "rules_link": result.rules_link,
                 "global_gitignore_updated": result.global_gitignore_updated,
+                "kb_rules_written": result.kb_rules_written,
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
@@ -47,6 +48,15 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
             println!("  ~/.gitignore  {} updated", "✓".green());
         } else {
             println!("  ~/.gitignore  {} already configured", "✓".green());
+        }
+
+        if result.kb_rules_written {
+            println!(
+                "  kb-rules.md   {} written (attach it in prompts)",
+                "✓".green()
+            );
+        } else {
+            println!("  kb-rules.md   {} already present", "✓".green());
         }
 
         println!();

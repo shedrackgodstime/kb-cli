@@ -169,7 +169,7 @@ fn setup_gitignore(gitignore: &Path) -> Result<bool> {
     if !gitignore.exists() {
         fs::write(
             gitignore,
-            "# kb symlinks (personal, never commit)\n/scratch\n/.agent-rules\n",
+            "# kb symlinks and rules (personal, never commit)\n/scratch\n/.agent-rules\n/kb-rules.md\n",
         )?;
         updated = true;
     } else {
@@ -184,6 +184,9 @@ fn setup_gitignore(gitignore: &Path) -> Result<bool> {
             let t = l.trim();
             t == "/.agent-rules" || t == ".agent-rules"
         });
+        let has_kb_rules = lines
+            .iter()
+            .any(|l| l.trim() == "/kb-rules.md" || l.trim() == "kb-rules.md");
 
         let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
 
@@ -193,6 +196,10 @@ fn setup_gitignore(gitignore: &Path) -> Result<bool> {
         }
         if !has_rules {
             new_lines.push("/.agent-rules".to_string());
+            updated = true;
+        }
+        if !has_kb_rules {
+            new_lines.push("/kb-rules.md".to_string());
             updated = true;
         }
 

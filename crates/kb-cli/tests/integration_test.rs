@@ -102,6 +102,14 @@ fn test_link_and_status() {
     let gitignore = fs::read_to_string(home_dir.path().join(".gitignore")).unwrap();
     assert!(gitignore.contains("/scratch"));
     assert!(gitignore.contains("/.agent-rules"));
+    assert!(gitignore.contains("/kb-rules.md"));
+
+    // Verify the personal kb-rules.md map was written into the repo root
+    let kb_rules = fs::read_to_string(repo.join("kb-rules.md")).unwrap();
+    assert!(kb_rules.contains("kb-rules.md"));
+    assert!(kb_rules.contains("scratch/HANDOFF.md"));
+    let repo_display = repo.to_string_lossy().replace('\\', "/");
+    assert!(kb_rules.contains(&repo_display));
 
     // Verify project .gitignore was NOT modified
     assert!(!repo.join(".gitignore").exists());
@@ -147,6 +155,7 @@ fn test_unlink() {
     // Verify symlinks removed
     assert!(!repo.join("scratch").exists());
     assert!(!repo.join(".agent-rules").exists());
+    assert!(!repo.join("kb-rules.md").exists());
 
     // But memory still exists
     assert!(kb.join("projects/myapp").exists());
@@ -248,4 +257,109 @@ fn test_link_missing_project_fails() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("not found"));
+}
+
+#[test]
+fn test_link_memory_is_portable() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+
+    // Templates are portable: only <project> gets substituted. A scaffold
+    // must never bake a machine's home path (e.g. C:\Users\... on Windows
+    // or /home/<user> on Linux) into committed, shared memory files. This
+    // simulates an old legacy template that still contained the hardcoded
+    // Linux home — the renderer must normalize it to `~`, not replace it
+    // with the current machine's home.
+    fs::write(
+        kb.join("templates/project/README.md"),
+        "# <project>\n\nProject repo: /home/kristency/Projects/<project>\n",
+    )
+    .unwrap();
+    fs::write(
+        kb.join("templates/project/ref-README.md"),
+        "## Local Checkouts\n\n```text\nknowledge-base/projects/<project>/ref/\n```\n",
+    )
+    .unwrap();
+
+    let home_dir = TempDir::new().unwrap();
+    let repo = fake_project_repo(dir.path(), "myapp");
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["link", repo.to_str().unwrap()])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    let readme = fs::read_to_string(kb.join("projects/myapp/README.md")).unwrap();
+    let ref_readme = fs::read_to_string(kb.join("projects/myapp/ref/README.md")).unwrap();
+
+    let home = home_dir.path().to_string_lossy().to_lowercase();
+    assert!(
+        !readme.to_lowercase().contains(&home),
+        "README must not contain the machine home path"
+    );
+    assert!(
+        !ref_readme.to_lowercase().contains(&home),
+        "ref README must not contain the machine home path"
+    );
+    assert!(!readme.contains("kristency"));
+    assert!(!ref_readme.contains("kristency"));
+
+    // Project-name substitution still works, and the legacy hardcoded home
+    // was normalized to a portable `~` instead of a machine-specific path.
+    assert!(readme.contains("~/Projects/myapp"));
+    assert!(ref_readme.contains("myapp"));
+}
+
+#[test]
+fn test_link_writes_kb_rules_from_template() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+
+    // The kb-rules.md template is portable (placeholders only, no machine
+    // paths) because it ships inside the shared KB repo. Machine paths are
+    // baked in at link time — the rendered file is personal + gitignored.
+    fs::write(
+        kb.join("templates/project/kb-rules.md"),
+        "# <project> rules\nRepo: <repo_dir>\nKB: <kb_root>\n",
+    )
+    .unwrap();
+
+    let home_dir = TempDir::new().unwrap();
+    let repo = fake_project_repo(dir.path(), "myapp");
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["link", repo.to_str().unwrap()])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("kb-rules.md"));
+
+    let content = fs::read_to_string(repo.join("kb-rules.md")).unwrap();
+    assert!(content.contains("# myapp rules"));
+    let repo_display = repo.to_string_lossy().replace('\\', "/");
+    assert!(content.contains(&format!("Repo: {}", repo_display)));
+    let canonical_kb = kb.canonicalize().unwrap();
+    let kb_display = canonical_kb.to_string_lossy().replace('\\', "/");
+    let kb_display = kb_display.strip_prefix("//?/").unwrap_or(&kb_display);
+    assert!(content.contains(&format!("KB: {}", kb_display)));
+
+    // Link again: file is preserved, not re-written
+    let before = fs::read_to_string(repo.join("kb-rules.md")).unwrap();
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["link", repo.to_str().unwrap()])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("already present"));
+    assert_eq!(
+        fs::read_to_string(repo.join("kb-rules.md")).unwrap(),
+        before
+    );
 }

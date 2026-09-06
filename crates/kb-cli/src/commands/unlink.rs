@@ -20,6 +20,7 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
                 "project_name": result.project_name,
                 "scratch_removed": result.scratch_removed,
                 "rules_removed": result.rules_removed,
+                "kb_rules_removed": result.kb_rules_removed,
                 "memory_kept_at": root.join("projects").join(&project_name),
             }
         });
@@ -38,6 +39,12 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
             println!("  .agent-rules {}", "removed".red());
         } else {
             println!("  .agent-rules {}", "not a symlink".dimmed());
+        }
+
+        if result.kb_rules_removed {
+            println!("  kb-rules.md  {}", "removed".red());
+        } else {
+            println!("  kb-rules.md  {}", "not present".dimmed());
         }
 
         println!();

@@ -33,6 +33,7 @@ pub fn run(kb_root: Option<&Path>, all: bool, _refs: bool, json: bool) -> Result
                     "repo_path": p.repo_path,
                     "scratch_healthy": p.scratch_healthy,
                     "rules_healthy": p.rules_healthy,
+                    "kb_rules_exists": p.kb_rules_exists,
                     "handoff_age": p.handoff_age,
                 })
             })
@@ -105,6 +106,12 @@ pub fn run(kb_root: Option<&Path>, all: bool, _refs: bool, json: bool) -> Result
                     warnings.push(format!("{}: .agent-rules symlink broken", status.name));
                 }
                 None => println!("    .agent-rules: {}", "repo not found".dimmed()),
+            }
+
+            if status.kb_rules_exists {
+                println!("    kb-rules.md:  {} present", "✓".green());
+            } else if status.repo_path.is_some() {
+                println!("    kb-rules.md:  {} missing (run `kb link`)", "✗".yellow());
             }
 
             if let Some(age) = &status.handoff_age {

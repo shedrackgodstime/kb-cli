@@ -152,7 +152,7 @@ fn check_gitignore_global() -> Check {
         }
     };
 
-    let gitignore_global = home.join(".gitignore_global");
+    let gitignore_global = home.join(".gitignore");
 
     // Check if global excludes are configured
     let excludes_configured = std::process::Command::new("git")
@@ -169,7 +169,7 @@ fn check_gitignore_global() -> Check {
             name: "gitignore_global",
             severity: Severity::Warn,
             message: "global gitignore not configured in git".to_string(),
-            fix: Some("run: git config --global core.excludesFile ~/.gitignore_global".to_string()),
+            fix: Some("run: git config --global core.excludesFile ~/.gitignore".to_string()),
         };
     }
 
@@ -177,8 +177,8 @@ fn check_gitignore_global() -> Check {
         return Check {
             name: "gitignore_global",
             severity: Severity::Warn,
-            message: "~/.gitignore_global does not exist".to_string(),
-            fix: Some("create ~/.gitignore_global with: scratch/ .agent-rules/ .kb/".to_string()),
+            message: "~/.gitignore does not exist".to_string(),
+            fix: Some("create ~/.gitignore with: scratch/ .agent-rules/ kb-rules.md".to_string()),
         };
     }
 
@@ -186,7 +186,7 @@ fn check_gitignore_global() -> Check {
     let lines: Vec<&str> = content.lines().collect();
     let mut missing = vec![];
 
-    for pattern in &["scratch", ".agent-rules", ".kb"] {
+    for pattern in &["scratch", ".agent-rules", "kb-rules.md"] {
         let found = lines.iter().any(|l| {
             let trimmed = l.trim();
             trimmed == *pattern
@@ -202,7 +202,7 @@ fn check_gitignore_global() -> Check {
         Check {
             name: "gitignore_global",
             severity: Severity::Pass,
-            message: "~/.gitignore_global configured".to_string(),
+            message: "~/.gitignore configured".to_string(),
             fix: None,
         }
     } else {
@@ -210,7 +210,7 @@ fn check_gitignore_global() -> Check {
             name: "gitignore_global",
             severity: Severity::Warn,
             message: format!("missing patterns: {}", missing.join(", ")),
-            fix: Some(format!("add to ~/.gitignore_global: {}", missing.join(" "))),
+            fix: Some(format!("add to ~/.gitignore: {}", missing.join(" "))),
         }
     }
 }
