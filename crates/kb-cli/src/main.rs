@@ -112,6 +112,21 @@ enum Commands {
         projects: Vec<String>,
     },
 
+    /// Bidirectional sync of the whole KB: pull if safe, then push everything
+    GlobalSync {
+        /// Custom commit message
+        #[arg(long, short)]
+        message: Option<String>,
+
+        /// Re-link active projects after syncing (default: on)
+        #[arg(long)]
+        no_link: bool,
+
+        /// Preview what would happen without changing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Pull knowledge-base updates (fast-forward only)
     Pull {
         /// Only pull and re-link this specific project (repeatable)
@@ -233,6 +248,17 @@ fn main() -> anyhow::Result<()> {
         Commands::Sync { projects } => {
             commands::sync::run(cli.kb_root.as_deref(), &projects, cli.json)
         }
+        Commands::GlobalSync {
+            message,
+            no_link,
+            dry_run,
+        } => commands::global_sync::run(
+            cli.kb_root.as_deref(),
+            message.as_deref(),
+            !no_link,
+            dry_run,
+            cli.json,
+        ),
         Commands::Pull {
             projects,
             link,

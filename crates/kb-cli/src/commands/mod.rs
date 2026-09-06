@@ -2,6 +2,7 @@ pub mod clone_refs;
 pub mod doctor;
 pub mod done;
 pub mod export;
+pub mod global_sync;
 pub mod import;
 pub mod init;
 pub mod link;

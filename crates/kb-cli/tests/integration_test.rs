@@ -27,6 +27,69 @@ fn fake_project_repo(dir: &Path, name: &str) -> PathBuf {
     repo
 }
 
+/// Helper: run git in a directory.
+fn git(args: &[&str], cwd: &Path) -> std::process::Output {
+    std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .unwrap()
+}
+
+/// Helper: commit everything in a git repo with a fixed identity.
+fn git_commit_all(cwd: &Path, msg: &str) {
+    assert!(git(&["add", "-A"], cwd).status.success());
+    let out = git(
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-m",
+            msg,
+        ],
+        cwd,
+    );
+    assert!(out.status.success(), "git commit failed: {:?}", out);
+}
+
+/// Helper: init a KB git repo with an empty bare origin; returns (kb, bare).
+fn setup_kb_git_repo(dir: &Path) -> (PathBuf, PathBuf) {
+    let kb = fake_kb_root(dir);
+    let bare = dir.join("origin.git");
+    assert!(
+        git(&["init", "--bare", bare.to_str().unwrap()], dir)
+            .status
+            .success()
+    );
+
+    let mut git_init = std::process::Command::new("git");
+    git_init.args(["init", "-b", "main"]).current_dir(&kb);
+    if !git_init.output().unwrap().status.success() {
+        // old git: fall back to init + branch -M main
+        assert!(git(&["init"], &kb).status.success());
+        assert!(git(&["branch", "-M", "main"], &kb).status.success());
+    }
+
+    // Repo-local identity so `kb global-sync`'s git commit works under a
+    // test HOME override even when the user's global config isn't present.
+    assert!(git(&["config", "user.name", "Test"], &kb).status.success());
+    assert!(
+        git(&["config", "user.email", "test@example.com"], &kb)
+            .status
+            .success()
+    );
+
+    git_commit_all(&kb, "init");
+    assert!(
+        git(&["remote", "add", "origin", bare.to_str().unwrap()], &kb)
+            .status
+            .success()
+    );
+    (kb, bare)
+}
+
 #[test]
 fn test_help() {
     kb_bin()
@@ -362,4 +425,163 @@ fn test_link_writes_kb_rules_from_template() {
         fs::read_to_string(repo.join("kb-rules.md")).unwrap(),
         before
     );
+}
+
+#[test]
+fn test_global_sync_commits_and_pushes_everything() {
+    let dir = TempDir::new().unwrap();
+    let (kb, bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    // An entirely new project memory file (untracked) + an edit
+    fs::create_dir_all(kb.join("projects/fresh")).unwrap();
+    fs::write(kb.join("projects/fresh/HANDOFF.md"), "# fresh\n").unwrap();
+    fs::write(kb.join("INDEX.md"), "# updated index\n").unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["global-sync", "--no-link"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Commit"))
+        .stdout(predicate::str::contains("Push"));
+
+    // Everything was pushed to the bare origin
+    let log = git(&["log", "--oneline"], &bare);
+    let log_str = String::from_utf8_lossy(&log.stdout);
+    assert!(log_str.contains("sync knowledge base"));
+
+    // Working tree is clean afterwards
+    let status = git(&["status", "--porcelain"], &kb);
+    assert!(String::from_utf8_lossy(&status.stdout).trim().is_empty());
+}
+
+#[test]
+fn test_global_sync_detects_divergence() {
+    let dir = TempDir::new().unwrap();
+    let (kb, bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    // Push the initial commit to origin first.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["global-sync", "--no-link"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    // Second machine clones the KB and pushes a change.
+    let clone = dir.path().join("clone");
+    assert!(
+        git(
+            &["clone", bare.to_str().unwrap(), clone.to_str().unwrap()],
+            dir.path()
+        )
+        .status
+        .success()
+    );
+    fs::write(clone.join("REMOTE.md"), "remote change\n").unwrap();
+    git_commit_all(&clone, "remote change");
+    assert!(git(&["push"], &clone).status.success());
+
+    // Local KB now makes its own (conflicting) commit without pulling.
+    fs::write(kb.join("LOCAL.md"), "local change\n").unwrap();
+    git_commit_all(&kb, "local change");
+
+    // The commit counters reset fetch state; run global-sync afterwards.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["global-sync", "--no-link"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("diverged"), "stdout: {}", stdout);
+
+    // Nothing was pushed beyond the remote change.
+    let log = git(&["log", "--oneline", "origin/main"], &clone);
+    let log_str = String::from_utf8_lossy(&log.stdout);
+    assert!(!log_str.contains("local change"));
+    assert!(log_str.contains("remote change"));
+}
+
+#[test]
+fn test_global_sync_behind_pulls_then_commits_nothing() {
+    let dir = TempDir::new().unwrap();
+    let (kb, bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    // Push initial commit.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["global-sync", "--no-link"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    // Remote gains a commit.
+    let clone = dir.path().join("clone");
+    assert!(
+        git(
+            &["clone", bare.to_str().unwrap(), clone.to_str().unwrap()],
+            dir.path()
+        )
+        .status
+        .success()
+    );
+    fs::write(clone.join("REMOTE2.md"), "remote 2\n").unwrap();
+    git_commit_all(&clone, "remote 2");
+    assert!(git(&["push"], &clone).status.success());
+
+    // Local is now behind but clean.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["global-sync", "--no-link"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("fast-forwarded"), "stdout: {}", stdout);
+    assert!(stdout.contains("nothing to commit"));
+
+    // Local HEAD points at the remote commit now.
+    let local_output = git(&["log", "--oneline", "-1"], &kb);
+    let remote_output = git(&["log", "--oneline", "-1"], &clone);
+    let local_head = String::from_utf8_lossy(&local_output.stdout);
+    let remote_head = String::from_utf8_lossy(&remote_output.stdout);
+    assert_eq!(local_head.trim(), remote_head.trim());
+}
+
+#[test]
+fn test_global_sync_dry_run_changes_nothing() {
+    let dir = TempDir::new().unwrap();
+    let (kb, bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    fs::write(kb.join("INDEX.md"), "# dry run\n").unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["global-sync", "--no-link", "--dry-run"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dry-run"));
+
+    // Remote untouched, local change still present but uncommitted.
+    let log = git(&["log", "--oneline"], &bare);
+    assert!(!String::from_utf8_lossy(&log.stdout).contains("dry run"));
+    let status = git(&["status", "--porcelain"], &kb);
+    assert!(String::from_utf8_lossy(&status.stdout).contains("INDEX.md"));
 }
