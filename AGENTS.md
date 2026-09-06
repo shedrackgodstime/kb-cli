@@ -30,7 +30,7 @@ You have full access to the real codebase, compiler, tests, and linters.
 ## 4. Local Machine Wiring
 
 ```text
-scratch      -> /home/kristency/knowledge-base/projects/kb
+scratch      -> /home/kristency/knowledge-base/projects/kb-cli
 .agent-rules -> /home/kristency/knowledge-base/agent-rules
 ```
 
