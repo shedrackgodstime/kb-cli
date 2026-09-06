@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use kb_core::{config, discovery, platform};
+use kb_core::{config, discovery, paths, platform};
 
 pub fn run(kb_root: Option<&Path>, json: bool) -> Result<()> {
     // Try to discover existing KB root
@@ -30,8 +30,7 @@ fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: boo
     })?;
 
     // 2. Setup global gitignore (~/.gitignore)
-    let home =
-        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+    let home = paths::home_dir()?;
     let gitignore = home.join(".gitignore");
     let gitignore_updated = setup_gitignore(&gitignore)?;
 
@@ -63,7 +62,11 @@ fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: boo
         println!("  {}: ~/.kb/config.toml", "Config".bold());
 
         if gitignore_updated {
-            println!("  {}: {} (updated)", "Gitignore".bold(), gitignore.display());
+            println!(
+                "  {}: {} (updated)",
+                "Gitignore".bold(),
+                gitignore.display()
+            );
         } else {
             println!("  {}: {} ✓", "Gitignore".bold(), gitignore.display());
         }
@@ -98,8 +101,7 @@ fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: boo
 
 /// Setup on a fresh machine — clone or create the knowledge-base.
 fn setup_new_machine(kb_root: Option<&Path>, json: bool) -> Result<()> {
-    let home =
-        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+    let home = paths::home_dir()?;
     let default_path = home.join("knowledge-base");
 
     let target_path = kb_root.unwrap_or(&default_path);

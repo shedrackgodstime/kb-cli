@@ -1,14 +1,29 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
+/// Resolve the user's home directory.
+///
+/// On Unix this is `dirs::home_dir()` (from `$HOME`). On Windows, `dirs`
+/// ignores environment variables and queries the shell's profile folder, so
+/// we honor an explicit `$HOME` override first — matching the behavior of
+/// tools like Git — to keep portable workflows and tests working.
+pub fn home_dir() -> Result<PathBuf> {
+    if let Some(home) = std::env::var_os("HOME")
+        && !home.is_empty()
+    {
+        return Ok(PathBuf::from(home));
+    }
+    dirs::home_dir().context("cannot determine home directory")
+}
+
 /// Expand `~` at the start of a path to the actual home directory.
 pub fn expand_home(path: &Path) -> Result<PathBuf> {
     let s = path.to_string_lossy();
     if let Some(rest) = s.strip_prefix("~/") {
-        let home = dirs::home_dir().context("cannot determine home directory")?;
+        let home = home_dir()?;
         Ok(home.join(rest))
     } else if s == "~" {
-        dirs::home_dir().context("cannot determine home directory")
+        home_dir()
     } else {
         Ok(path.to_path_buf())
     }
@@ -22,10 +37,7 @@ pub fn validate_project_name(name: &str) -> Result<()> {
         anyhow::bail!("project name cannot be empty");
     }
     if name.contains('/') || name.contains('\\') {
-        anyhow::bail!(
-            "project name cannot contain path separators: {}",
-            name
-        );
+        anyhow::bail!("project name cannot contain path separators: {}", name);
     }
     if name == ".." || name == "." {
         anyhow::bail!("project name cannot be '.' or '..'");
@@ -42,7 +54,7 @@ pub fn validate_project_name(name: &str) -> Result<()> {
 /// Resolve the default project repo path: `~/Projects/<name>`.
 pub fn default_project_dir(name: &str) -> Result<PathBuf> {
     validate_project_name(name)?;
-    let home = dirs::home_dir().context("cannot determine home directory")?;
+    let home = home_dir()?;
     Ok(home.join("Projects").join(name))
 }
 
@@ -82,7 +94,7 @@ mod tests {
     fn expand_home_handles_tilde_slash() {
         let p = PathBuf::from("~/foo");
         let expanded = expand_home(&p).unwrap();
-        let home = dirs::home_dir().unwrap();
+        let home = home_dir().unwrap();
         assert_eq!(expanded, home.join("foo"));
     }
 
@@ -90,7 +102,7 @@ mod tests {
     fn expand_home_handles_bare_tilde() {
         let p = PathBuf::from("~");
         let expanded = expand_home(&p).unwrap();
-        assert_eq!(expanded, dirs::home_dir().unwrap());
+        assert_eq!(expanded, home_dir().unwrap());
     }
 
     #[test]

@@ -224,7 +224,7 @@ fn create_project_memory(
         ))?;
     }
 
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = paths::home_dir().unwrap_or_default();
     let home_str = home.to_string_lossy().to_string();
 
     let render = |content: &str| -> String {
@@ -271,12 +271,10 @@ fn create_project_memory(
 ///
 /// This is global, personal config — never touches the project's .gitignore.
 fn ensure_global_gitignore() -> Result<bool> {
-    let home = dirs::home_dir().context("cannot determine home directory")?;
+    let home = paths::home_dir()?;
     let gitignore = home.join(".gitignore");
 
-    let entries = [
-        "# kb symlinks (personal, never commit)\n/scratch\n/.agent-rules\n",
-    ];
+    let entries = ["# kb symlinks (personal, never commit)\n/scratch\n/.agent-rules\n"];
 
     if !gitignore.exists() {
         let tmp = gitignore.with_extension("tmp");
@@ -329,7 +327,7 @@ mod tests {
         let gitignore = home.path().join(".gitignore");
 
         // Mock home_dir by writing to a temp path
-        // (ensure_global_gitignore uses dirs::home_dir, so we test the logic directly)
+        // (ensure_global_gitignore uses home_dir, so we test the logic directly)
         let entries = ["# kb symlinks (personal, never commit)\n/scratch\n/.agent-rules\n"];
         fs::write(&gitignore, entries[0]).unwrap();
 

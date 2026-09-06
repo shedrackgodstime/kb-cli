@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::config;
+use crate::paths;
 use crate::platform;
 
 /// Health check severity.
@@ -139,9 +140,9 @@ fn check_symlinks(kb_root: &Path) -> Check {
 
 /// Check that global gitignore is set up.
 fn check_gitignore_global() -> Check {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
+    let home = match paths::home_dir() {
+        Ok(h) => h,
+        Err(_) => {
             return Check {
                 name: "gitignore_global",
                 severity: Severity::Pass,

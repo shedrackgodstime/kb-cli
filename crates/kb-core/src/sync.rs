@@ -4,6 +4,7 @@ use std::process::Command;
 
 use crate::config;
 use crate::discovery;
+use crate::paths;
 use crate::project;
 
 /// Result of a pull operation.
@@ -293,8 +294,7 @@ fn git_pull_ff(root: &Path) -> Result<GitPullResult> {
 
 /// Default project directory for a named project.
 fn default_project_dir(name: &str) -> Result<std::path::PathBuf> {
-    let home =
-        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+    let home = paths::home_dir()?;
     Ok(home.join("Projects").join(name))
 }
 
@@ -324,8 +324,7 @@ pub fn export_project(
             p.to_path_buf()
         }
     } else {
-        let home =
-            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+        let home = paths::home_dir()?;
         home.join(format!("{}.tar.gz", project_name))
     };
 

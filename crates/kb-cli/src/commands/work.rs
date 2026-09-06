@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::Path;
 
-use kb_core::{discovery, project, state, sync};
+use kb_core::{discovery, paths, project, state, sync};
 
 pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
@@ -83,7 +83,6 @@ pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool) -> Result<()>
 }
 
 fn default_project_dir(name: &str) -> Result<std::path::PathBuf> {
-    let home =
-        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+    let home = paths::home_dir()?;
     Ok(home.join("Projects").join(name))
 }

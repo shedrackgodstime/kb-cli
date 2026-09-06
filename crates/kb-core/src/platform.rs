@@ -46,6 +46,36 @@ pub fn detect_platform() -> PlatformInfo {
     }
 }
 
+/// Remove the symlink at `link`, dispatching on target type.
+///
+/// Windows requires `remove_dir` for directory links and `remove_file` for
+/// file links — using the wrong one fails with access denied. On Unix,
+/// `remove_file` removes a symlink regardless of target type.
+fn remove_symlink_link(link: &Path) -> Result<()> {
+    let target_is_dir = fs::read_link(link)
+        .ok()
+        .and_then(|t| fs::metadata(t).ok())
+        .map(|m| m.is_dir());
+
+    let result = match target_is_dir {
+        Some(true) => fs::remove_dir(link),
+        _ => {
+            #[cfg(windows)]
+            {
+                // This tool only creates directory symlinks; on a broken
+                // link, prefer remove_dir and fall back to remove_file.
+                fs::remove_dir(link).or_else(|_| fs::remove_file(link))
+            }
+            #[cfg(not(windows))]
+            {
+                fs::remove_file(link).or_else(|_| fs::remove_dir(link))
+            }
+        }
+    };
+
+    result.context(format!("failed to remove symlink at {}", link.display()))
+}
+
 /// Create a directory symlink from `link` to `target`.
 ///
 /// On Linux/macOS, uses `std::os::unix::fs::symlink`.
@@ -56,10 +86,7 @@ pub fn detect_platform() -> PlatformInfo {
 pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
     // Validate target exists and is accessible
     if !target.exists() {
-        anyhow::bail!(
-            "symlink target does not exist: {}",
-            target.display()
-        );
+        anyhow::bail!("symlink target does not exist: {}", target.display());
     }
 
     // Validate target is within expected boundaries (not /tmp or /proc etc.)
@@ -82,10 +109,7 @@ pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
         .map(|m| m.file_type().is_symlink())
         .unwrap_or(false)
     {
-        fs::remove_file(link).context(format!(
-            "failed to remove existing symlink at {}",
-            link.display()
-        ))?;
+        remove_symlink_link(link)?;
     }
 
     // Error if link is a real directory
@@ -145,7 +169,7 @@ pub fn remove_symlink(link: &Path, expected_target: &Path) -> Result<bool> {
         .unwrap_or_else(|_| expected_target.to_path_buf());
 
     if current == expected {
-        fs::remove_file(link).context(format!("failed to remove symlink at {}", link.display()))?;
+        remove_symlink_link(link)?;
         Ok(true)
     } else {
         Ok(false)
@@ -253,6 +277,7 @@ mod tests {
         let target = dir.path().join("target");
         let link = dir.path().join("link");
         fs::create_dir(&target).unwrap();
+        fs::write(target.join("file.txt"), "keep me").unwrap();
 
         create_symlink(&target, &link).unwrap();
         assert!(is_symlink_to(&link, &target));
@@ -260,6 +285,8 @@ mod tests {
         let removed = remove_symlink(&link, &target).unwrap();
         assert!(removed);
         assert!(!link.exists());
+        // Target must be untouched — remove must not follow the link.
+        assert!(target.join("file.txt").exists());
     }
 
     #[test]

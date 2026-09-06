@@ -57,6 +57,7 @@ fn test_init_with_flag() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .arg("init")
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("KB root"));
@@ -76,6 +77,7 @@ fn test_link_and_status() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .args(["link", repo.to_str().unwrap()])
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("Linking"));
@@ -109,6 +111,7 @@ fn test_link_and_status() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .arg("status")
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("myapp"));
@@ -127,6 +130,7 @@ fn test_unlink() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .args(["link", repo.to_str().unwrap()])
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success();
 
@@ -135,6 +139,7 @@ fn test_unlink() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .args(["unlink", repo.to_str().unwrap()])
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("Unlinking"));
@@ -158,6 +163,7 @@ fn test_doctor() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .arg("doctor")
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("Doctor Results"));
@@ -174,6 +180,7 @@ fn test_projects_list() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .arg("projects")
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("Projects"));
@@ -192,6 +199,7 @@ fn test_link_idempotent() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .args(["link", repo.to_str().unwrap()])
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success();
 
@@ -199,6 +207,7 @@ fn test_link_idempotent() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .args(["link", repo.to_str().unwrap()])
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("Linking"));
@@ -218,6 +227,7 @@ fn test_link_by_name() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .args(["link", "myapp"])
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("Linking myapp"));
@@ -234,6 +244,7 @@ fn test_link_missing_project_fails() {
         .args(["--kb-root", kb.to_str().unwrap()])
         .args(["link", "nonexistent"])
         .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
         .assert()
         .failure()
         .stderr(predicate::str::contains("not found"));

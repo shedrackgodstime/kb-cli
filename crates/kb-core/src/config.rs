@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use crate::paths;
+
 /// Machine-local config stored at `~/.kb/config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
@@ -32,7 +34,7 @@ pub struct ProjectConfig {
 
 /// Config file path: `~/.kb/config.toml`.
 pub fn config_path() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("cannot determine home directory")?;
+    let home = paths::home_dir()?;
     Ok(home.join(".kb").join("config.toml"))
 }
 
@@ -40,7 +42,7 @@ pub fn config_path() -> Result<PathBuf> {
 ///
 /// On Unix, creates with 0o700 (owner-only access).
 pub fn ensure_kb_dir() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("cannot determine home directory")?;
+    let home = paths::home_dir()?;
     let kb_dir = home.join(".kb");
 
     if !kb_dir.exists() {
