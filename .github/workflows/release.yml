@@ -30,6 +30,14 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
+          - target: aarch64-linux-android
+            os: ubuntu-latest
+            archive: tar.gz
+            cross: true
+          - target: x86_64-linux-android
+            os: ubuntu-latest
+            archive: tar.gz
+            cross: true
 
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +58,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.target }}-
 
-      - name: Build release
+      - name: Install cargo-zigbuild (Android)
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Build release (native)
+        if: matrix.cross != true
         run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build release (Android cross)
+        if: matrix.cross
+        run: cargo zigbuild --release --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'

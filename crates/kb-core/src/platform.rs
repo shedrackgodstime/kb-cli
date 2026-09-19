@@ -22,7 +22,12 @@ pub enum SymlinkSupport {
 
 /// Detect current platform and symlink capabilities.
 pub fn detect_platform() -> PlatformInfo {
-    let os = if cfg!(target_os = "linux") {
+    // Android binaries run inside a Termux Linux userland: the kernel is
+    // Linux, `~/.kb`, `~/Projects/<name>`, git and symlinks all behave like
+    // Linux, so it only differs in the reported OS name.
+    let os = if cfg!(target_os = "android") {
+        "android"
+    } else if cfg!(target_os = "linux") {
         "linux"
     } else if cfg!(target_os = "macos") {
         "macos"
@@ -32,6 +37,7 @@ pub fn detect_platform() -> PlatformInfo {
         "unknown"
     };
 
+    // Android (like other Unix) supports symlinks natively in Termux.
     let symlink_support = if cfg!(unix) {
         SymlinkSupport::Native
     } else if cfg!(target_os = "windows") {
@@ -304,7 +310,19 @@ mod tests {
     #[test]
     fn detect_platform_returns_valid_os() {
         let info = detect_platform();
-        assert!(info.os == "linux" || info.os == "macos" || info.os == "windows");
+        assert!(
+            ["linux", "macos", "windows", "android"].contains(&info.os),
+            "unexpected os: {}",
+            info.os
+        );
+    }
+
+    #[cfg(target_os = "android")]
+    #[test]
+    fn detect_platform_reports_android() {
+        let info = detect_platform();
+        assert_eq!(info.os, "android");
+        assert_eq!(info.symlink_support, SymlinkSupport::Native);
     }
 
     #[cfg(unix)]

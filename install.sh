@@ -20,6 +20,11 @@ error() { echo -e "${RED}✗${NC} $1" >&2; exit 1; }
 
 # Detect OS
 detect_os() {
+    # Termux sets TERMUX_VERSION; `uname -o` also reports Android there.
+    if [ -n "${TERMUX_VERSION:-}" ] || { uname -o >/dev/null 2>&1 && [ "$(uname -o)" = "Android" ]; }; then
+        echo "android"
+        return
+    fi
     case "$(uname -s)" in
         Linux*)  echo "linux";;
         Darwin*) echo "darwin";;
@@ -59,6 +64,10 @@ install_kb() {
     case "$os" in
         linux)
             tarball="${BINARY}-${version}-${arch}-unknown-linux-gnu.tar.gz"
+            ;;
+        android)
+            # Termux on Android: bionic libc, kernel reports Linux, arch via uname
+            tarball="${BINARY}-${version}-${arch}-linux-android.tar.gz"
             ;;
         darwin)
             tarball="${BINARY}-${version}-${arch}-apple-darwin.tar.gz"
