@@ -199,6 +199,75 @@ enum Commands {
         #[arg(long, short)]
         message: Option<String>,
     },
+
+    /// Search memory files across the knowledge-base
+    Search {
+        /// Pattern to search for (case-insensitive substring match)
+        query: String,
+
+        /// Only search within these projects (repeatable)
+        #[arg(long = "project")]
+        projects: Vec<String>,
+
+        /// Only show matching file paths, not individual lines
+        #[arg(long)]
+        files_only: bool,
+
+        /// Only match files that match this glob pattern
+        #[arg(long)]
+        glob: Option<String>,
+
+        /// Match case-sensitively (default: insensitive)
+        #[arg(long)]
+        case_sensitive: bool,
+    },
+
+    /// Ensure the personal kb-rules.md map for a project
+    Rules {
+        /// Project name or path (default: current repository)
+        project: Option<String>,
+
+        /// Refresh every configured project
+        #[arg(long)]
+        all: bool,
+
+        /// Show what would happen without writing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Inspect and edit machine-local configuration
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigCommand {
+    /// List all configuration values
+    List,
+
+    /// Get a single configuration value
+    Get {
+        /// Dotted config key, e.g. kb_root or projects.irosh.clone_depth
+        key: String,
+    },
+
+    /// Set a configuration value
+    Set {
+        /// Dotted config key
+        key: String,
+
+        /// Value (JSON array, or plain value; accepts ~ for paths)
+        value: String,
+    },
+
+    /// Reset a configuration key to its default
+    Unset {
+        /// Dotted config key
+        key: String,
+    },
 }
 
 #[derive(clap::ValueEnum, Clone)]
@@ -418,8 +487,46 @@ fn main() -> anyhow::Result<()> {
         Commands::Work { project } => {
             commands::work::run(cli.kb_root.as_deref(), &project, cli.json)
         }
+        Commands::Search {
+            query,
+            projects,
+            files_only,
+            glob,
+            case_sensitive,
+        } => {
+            let found = commands::search::run(
+                cli.kb_root.as_deref(),
+                &query,
+                &projects,
+                glob.as_deref(),
+                files_only,
+                case_sensitive,
+                cli.json,
+            )?;
+            if !found {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
         Commands::Done { message } => {
             commands::done::run(cli.kb_root.as_deref(), message.as_deref(), cli.json)
         }
+        Commands::Rules {
+            project,
+            all,
+            dry_run,
+        } => commands::rules::run(
+            cli.kb_root.as_deref(),
+            project.as_deref(),
+            all,
+            dry_run,
+            cli.json,
+        ),
+        Commands::Config { command } => match command {
+            ConfigCommand::List => commands::config::run_list(cli.json),
+            ConfigCommand::Get { key } => commands::config::run_get(cli.json, &key),
+            ConfigCommand::Set { key, value } => commands::config::run_set(cli.json, &key, &value),
+            ConfigCommand::Unset { key } => commands::config::run_unset(cli.json, &key),
+        },
     }
 }

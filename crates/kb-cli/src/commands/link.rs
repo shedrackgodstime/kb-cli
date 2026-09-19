@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
-use kb_core::{discovery, paths, project};
+use kb_core::{discovery, project};
+
+use super::resolve_project;
 
 pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
@@ -84,54 +86,4 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
     }
 
     Ok(())
-}
-
-fn resolve_project(input: &str) -> Result<(String, std::path::PathBuf)> {
-    let expanded = paths::expand_home(std::path::Path::new(input))?;
-
-    if expanded.exists() && expanded.is_dir() {
-        let name = expanded
-            .canonicalize()
-            .ok()
-            .and_then(|p| p.file_name().map(|s| s.to_string_lossy().to_string()))
-            .unwrap_or_else(|| input.to_string());
-
-        // Handle "." and ".." — resolve to actual directory name
-        let name = if name == "." || name == ".." {
-            std::env::current_dir()
-                .context("cannot determine current directory")?
-                .file_name()
-                .context("cannot determine current directory name")?
-                .to_string_lossy()
-                .to_string()
-        } else {
-            name
-        };
-
-        return Ok((name, expanded));
-    }
-
-    if input.contains('/') || input.contains('\\') {
-        if expanded.exists() {
-            let name = expanded
-                .file_name()
-                .context("cannot determine project name from path")?
-                .to_string_lossy()
-                .to_string();
-            return Ok((name, expanded));
-        }
-        anyhow::bail!("project path does not exist: {}", expanded.display());
-    }
-
-    let name = input.to_string();
-    let repo_dir = paths::default_project_dir(&name)?;
-    if !repo_dir.exists() {
-        anyhow::bail!(
-            "project repo not found at {}.\n\
-             Pass the full path instead: kb link /path/to/{}",
-            repo_dir.display(),
-            name
-        );
-    }
-    Ok((name, repo_dir))
 }

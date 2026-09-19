@@ -350,6 +350,118 @@ fn ensure_kb_rules(
         return Ok(false);
     }
 
+    let content = render_kb_rules(repo_dir, project_name, kb_root, templates_dir)?;
+
+    let tmp = dest.with_extension("tmp");
+    fs::write(&tmp, content)?;
+    fs::rename(&tmp, dest)?;
+    Ok(true)
+}
+
+/// Outcome of syncing a project's personal `kb-rules.md` map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KbRulesAction {
+    /// The map did not exist and was written.
+    Created,
+    /// The map exists and already matches the current template render.
+    UpToDate,
+    /// The map exists but differs from the template render — treated as
+    /// locally-edited and left untouched.
+    Skipped,
+    /// The project repo or memory directory does not exist.
+    NotFound,
+}
+
+/// Result of a `kb rules` operation for one project.
+#[derive(Debug)]
+pub struct RulesForResult {
+    pub project_name: String,
+    pub repo_dir: PathBuf,
+    pub dest: PathBuf,
+    pub action: KbRulesAction,
+}
+
+/// Ensure (or reconcile) the personal `kb-rules.md` map for a project.
+///
+/// Resolves the project's repo directory from config (or the default
+/// `~/Projects/<name>` location), then renders the current template and:
+///
+/// - writes the file when missing (`Created`),
+/// - leaves exact template matches alone (`UpToDate`),
+/// - never overwrites a locally-edited file (`Skipped`).
+///
+/// With `dry_run`, reports the would-be action without writing anything.
+///
+/// `repo_dir` overrides the config/default resolution used by `kb rules --all`;
+/// pass a concrete repo path when syncing a single project.
+pub fn rules_for(
+    kb_root: &Path,
+    project_name: &str,
+    repo_dir: Option<&Path>,
+    templates_dir: &Path,
+    dry_run: bool,
+) -> Result<RulesForResult> {
+    paths::validate_project_name(project_name)?;
+
+    let repo_dir = match repo_dir {
+        Some(path) => path.to_path_buf(),
+        None => {
+            let cfg = config::load()?;
+            cfg.projects
+                .get(project_name)
+                .and_then(|c| c.repo_path.clone())
+                .or_else(|| paths::default_project_dir(project_name).ok())
+                .ok_or_else(|| {
+                    anyhow::anyhow!("cannot resolve repo directory for '{}'", project_name)
+                })?
+        }
+    };
+
+    let dest = repo_dir.join(KB_RULES_FILENAME);
+
+    if !repo_dir.is_dir() {
+        return Ok(RulesForResult {
+            project_name: project_name.to_string(),
+            repo_dir,
+            dest,
+            action: KbRulesAction::NotFound,
+        });
+    }
+
+    let rendered = render_kb_rules(&repo_dir, project_name, kb_root, templates_dir)?;
+
+    let action = if !dest.exists() {
+        if !dry_run {
+            let tmp = dest.with_extension("tmp");
+            fs::write(&tmp, rendered)?;
+            fs::rename(&tmp, &dest)?;
+        }
+        KbRulesAction::Created
+    } else {
+        let existing =
+            fs::read_to_string(&dest).context(format!("failed to read {}", dest.display()))?;
+        if existing == rendered {
+            KbRulesAction::UpToDate
+        } else {
+            KbRulesAction::Skipped
+        }
+    };
+
+    Ok(RulesForResult {
+        project_name: project_name.to_string(),
+        repo_dir,
+        dest,
+        action,
+    })
+}
+
+/// Render the personal `kb-rules.md` content for a project.
+fn render_kb_rules(
+    repo_dir: &Path,
+    project_name: &str,
+    kb_root: &Path,
+    templates_dir: &Path,
+) -> Result<String> {
     let template_path = templates_dir.join("kb-rules.md");
     let template = if template_path.exists() {
         fs::read_to_string(&template_path)
@@ -358,16 +470,11 @@ fn ensure_kb_rules(
         DEFAULT_KB_RULES_TEMPLATE.to_string()
     };
 
-    let content = template
+    Ok(template
         .replace("<project>", project_name)
         .replace("<repo_dir>", &render_path(repo_dir))
         .replace("<kb_root>", &render_path(kb_root))
-        .replace("/home/kristency", "~");
-
-    let tmp = dest.with_extension("tmp");
-    fs::write(&tmp, content)?;
-    fs::rename(&tmp, dest)?;
-    Ok(true)
+        .replace("/home/kristency", "~"))
 }
 
 /// Format a path for display inside kb-rules.md: forward slashes and no
@@ -538,5 +645,87 @@ mod tests {
             fs::read_to_string(repo.join(KB_RULES_FILENAME)).unwrap(),
             "user content"
         );
+    }
+
+    #[test]
+    fn rules_for_creates_missing_map() {
+        let dir = TempDir::new().unwrap();
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let templates = dir.path().join("templates");
+        fs::create_dir_all(&templates).unwrap();
+        let kb_root = dir.path().join("knowledge-base");
+
+        let result = rules_for(&kb_root, "myapp", Some(&repo), &templates, false).unwrap();
+        assert_eq!(result.action, KbRulesAction::Created);
+        assert_eq!(result.project_name, "myapp");
+
+        let content = fs::read_to_string(repo.join(KB_RULES_FILENAME)).unwrap();
+        assert!(content.contains("kb-rules.md - myapp"));
+    }
+
+    #[test]
+    fn rules_for_reports_uptodate_when_identical() {
+        let dir = TempDir::new().unwrap();
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let templates = dir.path().join("templates");
+        fs::create_dir_all(&templates).unwrap();
+        let kb_root = dir.path().join("knowledge-base");
+
+        rules_for(&kb_root, "myapp", Some(&repo), &templates, false).unwrap();
+        let result = rules_for(&kb_root, "myapp", Some(&repo), &templates, false).unwrap();
+        assert_eq!(result.action, KbRulesAction::UpToDate);
+    }
+
+    #[test]
+    fn rules_for_skips_locally_edited_map() {
+        let dir = TempDir::new().unwrap();
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let templates = dir.path().join("templates");
+        fs::create_dir_all(&templates).unwrap();
+        let kb_root = dir.path().join("knowledge-base");
+
+        fs::write(repo.join(KB_RULES_FILENAME), "my personal notes\n").unwrap();
+        let result = rules_for(&kb_root, "myapp", Some(&repo), &templates, false).unwrap();
+        assert_eq!(result.action, KbRulesAction::Skipped);
+        assert_eq!(
+            fs::read_to_string(repo.join(KB_RULES_FILENAME)).unwrap(),
+            "my personal notes\n"
+        );
+    }
+
+    #[test]
+    fn rules_for_dry_run_does_not_write() {
+        let dir = TempDir::new().unwrap();
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let templates = dir.path().join("templates");
+        fs::create_dir_all(&templates).unwrap();
+        let kb_root = dir.path().join("knowledge-base");
+
+        let result = rules_for(&kb_root, "myapp", Some(&repo), &templates, true).unwrap();
+        assert_eq!(result.action, KbRulesAction::Created);
+        assert!(!repo.join(KB_RULES_FILENAME).exists());
+
+        // Dry-run on an up-to-date file never rewrites it
+        let dest = repo.join(KB_RULES_FILENAME);
+        fs::write(&dest, "known").unwrap();
+        let result = rules_for(&kb_root, "myapp", Some(&repo), &templates, false).unwrap();
+        assert_eq!(result.action, KbRulesAction::Skipped);
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "known");
+    }
+
+    #[test]
+    fn rules_for_reports_not_found_when_repo_missing() {
+        let dir = TempDir::new().unwrap();
+        let repo = dir.path().join("missing-repo");
+        let templates = dir.path().join("templates");
+        fs::create_dir_all(&templates).unwrap();
+        let kb_root = dir.path().join("knowledge-base");
+
+        let result = rules_for(&kb_root, "myapp", Some(&repo), &templates, false).unwrap();
+        assert_eq!(result.action, KbRulesAction::NotFound);
     }
 }
