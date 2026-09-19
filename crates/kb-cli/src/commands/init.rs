@@ -111,10 +111,10 @@ fn setup_new_machine(kb_root: Option<&Path>, json: bool) -> Result<()> {
             "ok": false,
             "error": "knowledge_base_not_found",
             "message": format!("Knowledge base not found at {}", target_path.display()),
-            "suggestions": [
-                format!("git clone <your-repo> {}", target_path.display()),
-                format!("kb init --kb-root /path/to/existing/knowledge-base"),
-            ]
+        "suggestions": [
+                    format!("git clone <your-repo> {}", target_path.display()),
+                    "kb init --kb-root /path/to/existing/knowledge-base",
+                ]
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {

@@ -585,3 +585,351 @@ fn test_global_sync_dry_run_changes_nothing() {
     let status = git(&["status", "--porcelain"], &kb);
     assert!(String::from_utf8_lossy(&status.stdout).contains("INDEX.md"));
 }
+
+#[test]
+fn test_search_finds_matches() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+
+    fs::create_dir_all(kb.join("projects/alpha/spec")).unwrap();
+    fs::write(
+        kb.join("projects/alpha/HANDOFF.md"),
+        "alpha handoff\nblocker: rust cache\n",
+    )
+    .unwrap();
+    fs::write(
+        kb.join("projects/alpha/spec/01.md"),
+        "alpha spec with a Blocker quote\n",
+    )
+    .unwrap();
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["search", "blocker"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "exit: {:?}", out.status.code());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("projects/alpha/HANDOFF.md:2"),
+        "stdout: {}",
+        stdout
+    );
+    assert!(stdout.contains("projects/alpha/spec/01.md:1"));
+}
+
+#[test]
+fn test_search_project_filter_and_files_only() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+
+    fs::create_dir_all(kb.join("projects/alpha")).unwrap();
+    fs::create_dir_all(kb.join("projects/beta")).unwrap();
+    fs::write(kb.join("projects/alpha/HANDOFF.md"), "alpha blocker\n").unwrap();
+    fs::write(kb.join("projects/beta/HANDOFF.md"), "beta blocker\n").unwrap();
+
+    // Filtered to one project.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["search", "blocker", "--project", "alpha"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("projects/alpha/HANDOFF.md"));
+    assert!(!stdout.contains("projects/beta"));
+
+    // files-only dedupes to one path and shows no line numbers.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["search", "blocker", "--project", "alpha", "--files-only"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stdout.matches("projects/alpha/HANDOFF.md").count(), 1);
+    assert!(!stdout.contains(":1:"));
+}
+
+#[test]
+fn test_search_no_matches_exits_1_and_json_shape() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+
+    // No hits -> exit code 1.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["search", "zzz-nonexistent"])
+        .assert()
+        .code(1);
+
+    // Hits -> JSON output shape.
+    fs::create_dir_all(kb.join("projects/alpha")).unwrap();
+    fs::write(kb.join("projects/alpha/HANDOFF.md"), "needle here\n").unwrap();
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["search", "here", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"query\": \"here\""));
+    assert!(stdout.contains("\"path\": \"projects/alpha/HANDOFF.md\""));
+    assert!(stdout.contains("\"line\": 1"));
+    assert!(stdout.contains("\"project\": \"alpha\""));
+    assert!(stdout.contains("\"count\": 1"));
+}
+
+#[test]
+fn test_rules_creates_map() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let repo = fake_project_repo(dir.path(), "alpha");
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["rules", repo.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "exit: {:?}", out.status.code());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("written"), "stdout: {}", stdout);
+    assert!(repo.join("kb-rules.md").exists());
+    let content = fs::read_to_string(repo.join("kb-rules.md")).unwrap();
+    assert!(content.contains("kb-rules.md - alpha"));
+}
+
+#[test]
+fn test_rules_up_to_date_and_json() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let repo = fake_project_repo(dir.path(), "alpha");
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["rules", repo.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["rules", repo.to_str().unwrap(), "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"action\": \"up-to-date\""));
+    assert!(stdout.contains("\"project\": \"alpha\""));
+    assert!(stdout.contains("\"file\""));
+}
+
+#[test]
+fn test_rules_preserves_local_edits() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let repo = fake_project_repo(dir.path(), "alpha");
+    fs::write(repo.join("kb-rules.md"), "my personal map\n").unwrap();
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["rules", repo.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("skipped (keep local edits)"),
+        "stdout: {}",
+        stdout
+    );
+    assert_eq!(
+        fs::read_to_string(repo.join("kb-rules.md")).unwrap(),
+        "my personal map\n"
+    );
+}
+
+#[test]
+fn test_rules_dry_run_does_not_write() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let repo = fake_project_repo(dir.path(), "alpha");
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["rules", repo.to_str().unwrap(), "--dry-run"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("dry run"), "stdout: {}", stdout);
+    assert!(!repo.join("kb-rules.md").exists());
+    assert!(stdout.contains("would be written"));
+}
+
+#[test]
+fn test_rules_all_uses_configured_repos() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let repo = fake_project_repo(dir.path(), "alpha");
+
+    // Point the machine-local config at the fake repo so `--all` finds it.
+    let home_dir = TempDir::new().unwrap();
+    let config_dir = home_dir.path().join(".kb");
+    fs::create_dir_all(&config_dir).unwrap();
+    let repo_path = repo.to_str().unwrap().replace('\\', "/");
+    fs::write(
+        config_dir.join("config.toml"),
+        format!("[projects.alpha]\nrepo_path = \"{}\"\n", repo_path),
+    )
+    .unwrap();
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["rules", "--all"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "exit: {:?}", out.status.code());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("alpha"), "stdout: {}", stdout);
+    assert!(repo.join("kb-rules.md").exists());
+}
+
+#[test]
+fn test_config_set_get_roundtrip() {
+    let dir = TempDir::new().unwrap();
+    let home_dir = TempDir::new().unwrap();
+    let repo = fake_project_repo(dir.path(), "alpha");
+    let repo_path = repo.to_str().unwrap().replace('\\', "/");
+
+    let set = kb_bin()
+        .args([
+            "config",
+            "set",
+            "active_projects",
+            r#"["alpha","beta"]"#,
+            "--json",
+        ])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(set.status.success(), "set failed: {:?}", set.status.code());
+
+    let set = kb_bin()
+        .args(["config", "set", "kb_root", "/kb/root"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(set.status.success());
+
+    let set = kb_bin()
+        .args(["config", "set", "projects.alpha.repo_path", &repo_path])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(set.status.success());
+
+    let get = kb_bin()
+        .args(["config", "get", "active_projects", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(get.status.success());
+    let stdout = String::from_utf8_lossy(&get.stdout);
+    assert!(stdout.contains("\"key\": \"active_projects\""));
+    assert!(stdout.contains("\"alpha\""), "stdout: {}", stdout);
+    assert!(stdout.contains("\"beta\""));
+
+    let get = kb_bin()
+        .args(["config", "get", "projects.alpha.clone_depth"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(get.status.success());
+    assert!(String::from_utf8_lossy(&get.stdout).contains("= 0"));
+}
+
+#[test]
+fn test_config_set_roundtrips_to_disk() {
+    let home_dir = TempDir::new().unwrap();
+
+    kb_bin()
+        .args(["config", "set", "projects.irosh.clone_depth", "1"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    assert!(config_file.exists());
+    let content = fs::read_to_string(&config_file).unwrap();
+    assert!(content.contains("clone_depth = 1"), "content: {}", content);
+}
+
+#[test]
+fn test_config_invalid_key_errors_with_valid_list() {
+    let home_dir = TempDir::new().unwrap();
+    kb_bin()
+        .args(["config", "set", "bogus", "x"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("valid keys"));
+}
+
+#[test]
+fn test_config_list_json_shape() {
+    let home_dir = TempDir::new().unwrap();
+    let out = kb_bin()
+        .args(["config", "list", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"ok\": true"));
+    assert!(stdout.contains("\"config\""));
+    assert!(stdout.contains("\"active_projects\""));
+}
+
+#[test]
+fn test_config_unset_clears_value() {
+    let home_dir = TempDir::new().unwrap();
+
+    kb_bin()
+        .args(["config", "set", "active_projects", r#"["alpha"]"#])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    kb_bin()
+        .args(["config", "unset", "active_projects"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    let get = kb_bin()
+        .args(["config", "get", "active_projects", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(get.status.success());
+    let stdout = String::from_utf8_lossy(&get.stdout);
+    assert!(
+        stdout.contains("\"value\": null") || stdout.contains("\"value\": []"),
+        "stdout: {}",
+        stdout
+    );
+}
