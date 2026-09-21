@@ -94,7 +94,15 @@ jobs:
             ${{ runner.os }}-android-${{ matrix.target }}-
 
       - name: Install zig
-        uses: ziglang/action-setup@v1
+        run: |
+          set -euxo pipefail
+          ZIG_VERSION=0.16.0
+          curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -o zig.tar.xz
+          tar -xf zig.tar.xz
+          mkdir -p "$HOME/.local/bin"
+          cp "zig-x86_64-linux-${ZIG_VERSION}/zig" "$HOME/.local/bin/zig"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          zig version
 
       - name: Install cargo-zigbuild
         uses: taiki-e/install-action@v2
