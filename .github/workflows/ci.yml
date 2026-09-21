@@ -64,15 +64,19 @@ jobs:
         run: cargo clippy -- -D warnings
 
   cross-android:
-    # Prove the Android (Termux) binaries still cross-compile. Uses
-    # cargo-zigbuild for the linker, so no Android NDK/SDK is needed.
+    # Prove the Android (Termux) binaries still cross-compile. Uses the
+    # NDK that ships with the ubuntu-latest runner via cargo-ndk; nothing
+    # is installed beyond the cargo-ndk helper.
     name: Cross-compile ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        target:
-          - aarch64-linux-android
-          - x86_64-linux-android
+        include:
+          - target: aarch64-linux-android
+            abi: arm64-v8a
+          - target: x86_64-linux-android
+            abi: x86_64
 
     steps:
       - uses: actions/checkout@v4
@@ -93,23 +97,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-android-${{ matrix.target }}-
 
-      - name: Install zig
-        run: |
-          set -euxo pipefail
-          ZIG_VERSION=0.16.0
-          curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -o zig.tar.xz
-          tar -xf zig.tar.xz
-          echo "$PWD/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
-          export PATH="$PWD/zig-x86_64-linux-${ZIG_VERSION}:$PATH"
-          zig version
-
-      - name: Install cargo-zigbuild
+      - name: Install cargo-ndk
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-zigbuild
+          tool: cargo-ndk
 
       - name: Cross-compile release
-        run: cargo zigbuild --release --target ${{ matrix.target }}
+        run: cargo ndk -t ${{ matrix.abi }} build --release
 
       - name: Check android artifact
         run: test -f target/${{ matrix.target }}/release/kb
