@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::config;
 use crate::paths;
 use crate::platform;
+use crate::sparse;
 
 /// Health check severity.
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +38,7 @@ pub fn run_all(kb_root: &Path) -> Result<DoctorReport> {
         check_gitignore_global(),
         check_handoffs(kb_root),
         check_orphaned_projects(kb_root),
+        check_sparse(kb_root),
     ];
 
     Ok(DoctorReport { checks })
@@ -322,5 +324,97 @@ fn check_orphaned_projects(kb_root: &Path) -> Check {
             ),
             fix: Some("add to active_projects in config, or remove the directory".to_string()),
         }
+    }
+}
+
+/// Check that a sparse-checkout, when active, matches the configured
+/// subscriptions (`active_projects` is the source of truth).
+fn check_sparse(kb_root: &Path) -> Check {
+    let enabled = match sparse::sparse_enabled(kb_root) {
+        Ok(e) => e,
+        Err(_) => {
+            return Check {
+                name: "sparse",
+                severity: Severity::Pass,
+                message: "skipped (kb not a git worktree)".to_string(),
+                fix: None,
+            };
+        }
+    };
+
+    if !enabled {
+        return Check {
+            name: "sparse",
+            severity: Severity::Pass,
+            message: "full checkout (all project memory present on this device)".to_string(),
+            fix: None,
+        };
+    }
+
+    let configured = match config::load() {
+        Ok(cfg) => cfg.active_projects,
+        Err(_) => {
+            return Check {
+                name: "sparse",
+                severity: Severity::Warn,
+                message: "sparse-checkout active but config unavailable".to_string(),
+                fix: Some("run `kb init` to fix config".to_string()),
+            };
+        }
+    };
+
+    let materialized = sparse::subscribed_sparse_projects(kb_root).unwrap_or_default();
+
+    let mut missing: Vec<String> = configured
+        .iter()
+        .filter(|p| !materialized.contains(p))
+        .cloned()
+        .collect();
+    let mut extra: Vec<String> = materialized
+        .iter()
+        .filter(|p| !configured.contains(p))
+        .cloned()
+        .collect();
+    missing.sort();
+    extra.sort();
+
+    if missing.is_empty() && extra.is_empty() {
+        return Check {
+            name: "sparse",
+            severity: Severity::Pass,
+            message: format!(
+                "sparse-checkout matches subscriptions ({} project(s))",
+                configured.len()
+            ),
+            fix: None,
+        };
+    }
+
+    let mut parts = vec![];
+    let mut fixes = vec![];
+    if !missing.is_empty() {
+        parts.push(format!(
+            "subscribed but not checked out: {}",
+            missing.join(", ")
+        ));
+        for p in &missing {
+            fixes.push(format!("kb subscribe {}", p));
+        }
+    }
+    if !extra.is_empty() {
+        parts.push(format!(
+            "checked out but not subscribed: {}",
+            extra.join(", ")
+        ));
+        for p in &extra {
+            fixes.push(format!("kb unsubscribe {}", p));
+        }
+    }
+
+    Check {
+        name: "sparse",
+        severity: Severity::Warn,
+        message: parts.join("; "),
+        fix: Some(fixes.join("; ")),
     }
 }

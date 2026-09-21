@@ -251,6 +251,18 @@ enum Commands {
         dry_run: bool,
     },
 
+    /// Subscribe this device to a project's memory (selective sync)
+    Subscribe {
+        /// Project name
+        project: String,
+    },
+
+    /// Stop receiving a project's memory on this device
+    Unsubscribe {
+        /// Project name
+        project: String,
+    },
+
     /// Inspect and edit machine-local configuration
     Config {
         #[command(subcommand)]
@@ -531,6 +543,12 @@ fn main() -> anyhow::Result<()> {
             stat,
             projects,
         } => commands::log::run(cli.kb_root.as_deref(), limit, stat, &projects, cli.json),
+        Commands::Subscribe { project } => {
+            commands::subscribe::run(cli.kb_root.as_deref(), &project, cli.json)
+        }
+        Commands::Unsubscribe { project } => {
+            commands::unsubscribe::run(cli.kb_root.as_deref(), &project, cli.json)
+        }
         Commands::Rules {
             project,
             all,

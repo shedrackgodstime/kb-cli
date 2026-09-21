@@ -7,5 +7,6 @@ pub mod platform;
 pub mod project;
 pub mod refs;
 pub mod search;
+pub mod sparse;
 pub mod state;
 pub mod sync;
