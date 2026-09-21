@@ -222,6 +222,21 @@ enum Commands {
         case_sensitive: bool,
     },
 
+    /// Show recent knowledge-base history from git
+    Log {
+        /// Number of commits to show
+        #[arg(long, short, default_value_t = 15)]
+        limit: usize,
+
+        /// Show per-file change statistics
+        #[arg(long)]
+        stat: bool,
+
+        /// Only show commits touching these projects (repeatable)
+        #[arg(long = "project")]
+        projects: Vec<String>,
+    },
+
     /// Ensure the personal kb-rules.md map for a project
     Rules {
         /// Project name or path (default: current repository)
@@ -511,6 +526,11 @@ fn main() -> anyhow::Result<()> {
         Commands::Done { message } => {
             commands::done::run(cli.kb_root.as_deref(), message.as_deref(), cli.json)
         }
+        Commands::Log {
+            limit,
+            stat,
+            projects,
+        } => commands::log::run(cli.kb_root.as_deref(), limit, stat, &projects, cli.json),
         Commands::Rules {
             project,
             all,

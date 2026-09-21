@@ -7,6 +7,7 @@ pub mod global_sync;
 pub mod import;
 pub mod init;
 pub mod link;
+pub mod log;
 pub mod projects;
 pub mod pull;
 pub mod push;

@@ -917,6 +917,136 @@ fn test_config_list_json_shape() {
 }
 
 #[test]
+fn test_log_shows_recent_commits() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .arg("log")
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("init"));
+}
+
+#[test]
+fn test_log_project_filter() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    fs::create_dir_all(kb.join("projects/alpha")).unwrap();
+    fs::write(kb.join("projects/alpha/NOTES.md"), "alpha\n").unwrap();
+    git_commit_all(&kb, "alpha work");
+
+    fs::create_dir_all(kb.join("projects/beta")).unwrap();
+    fs::write(kb.join("projects/beta/NOTES.md"), "beta\n").unwrap();
+    git_commit_all(&kb, "beta work");
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["log", "--project", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("alpha work"), "stdout: {}", stdout);
+    assert!(!stdout.contains("beta work"), "stdout: {}", stdout);
+}
+
+#[test]
+fn test_log_limit_restricts_count() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    for msg in ["change one", "change two", "change three"] {
+        fs::write(kb.join("INDEX.md"), format!("# {msg}\n")).unwrap();
+        git_commit_all(&kb, msg);
+    }
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["log", "--limit", "2"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("change three"), "stdout: {}", stdout);
+    assert!(stdout.contains("change two"), "stdout: {}", stdout);
+    assert!(!stdout.contains("change one"), "stdout: {}", stdout);
+}
+
+#[test]
+fn test_log_stat_shows_changes() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    fs::write(kb.join("INDEX.md"), "# stat test\n").unwrap();
+    git_commit_all(&kb, "stat change");
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["log", "--stat", "--limit", "1"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("stat change"), "stdout: {}", stdout);
+    assert!(stdout.contains("INDEX.md"), "stdout: {}", stdout);
+}
+
+#[test]
+fn test_log_json_shape() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["log", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"ok\": true"), "stdout: {}", stdout);
+    assert!(stdout.contains("\"entries\""), "stdout: {}", stdout);
+    assert!(stdout.contains("\"hash\""), "stdout: {}", stdout);
+}
+
+#[test]
+fn test_log_not_git_repo_errors() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .arg("log")
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not a git repository"));
+}
+
+#[test]
 fn test_config_unset_clears_value() {
     let home_dir = TempDir::new().unwrap();
 
