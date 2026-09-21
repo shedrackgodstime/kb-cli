@@ -94,7 +94,7 @@ jobs:
             ${{ runner.os }}-android-${{ matrix.target }}-
 
       - name: Install zig
-        uses: mlugg/setup-zig@v1
+        uses: ziglang/action-setup@v1
 
       - name: Install cargo-zigbuild
         uses: taiki-e/install-action@v2

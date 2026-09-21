@@ -60,7 +60,7 @@ jobs:
 
       - name: Install zig (Android)
         if: matrix.cross
-        uses: mlugg/setup-zig@v1
+        uses: ziglang/action-setup@v1
 
       - name: Install cargo-zigbuild (Android)
         if: matrix.cross
