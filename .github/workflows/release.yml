@@ -58,11 +58,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.target }}-
 
+      - name: Install zig (Android)
+        if: matrix.cross
+        uses: mlugg/setup-zig@v1
+
       - name: Install cargo-zigbuild (Android)
         if: matrix.cross
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-zigbuild,zig
+          tool: cargo-zigbuild
 
       - name: Build release (native)
         if: matrix.cross != true
