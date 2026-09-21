@@ -1,6 +1,7 @@
 pub mod config;
 pub mod discovery;
 pub mod doctor;
+pub mod log;
 pub mod paths;
 pub mod platform;
 pub mod project;
