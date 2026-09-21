@@ -58,26 +58,17 @@ pub fn detect_platform() -> PlatformInfo {
 /// file links — using the wrong one fails with access denied. On Unix,
 /// `remove_file` removes a symlink regardless of target type.
 fn remove_symlink_link(link: &Path) -> Result<()> {
-    let target_is_dir = fs::read_link(link)
-        .ok()
-        .and_then(|t| fs::metadata(t).ok())
-        .map(|m| m.is_dir());
+    // On Unix a symlink is removed with unlink(2) regardless of whether its
+    // target is a file or a directory. `remove_dir`/rmdir(2) on a symlink
+    // fails with ENOTDIR, so it must never be used here.
+    #[cfg(unix)]
+    let result = fs::remove_file(link);
 
-    let result = match target_is_dir {
-        Some(true) => fs::remove_dir(link),
-        _ => {
-            #[cfg(windows)]
-            {
-                // This tool only creates directory symlinks; on a broken
-                // link, prefer remove_dir and fall back to remove_file.
-                fs::remove_dir(link).or_else(|_| fs::remove_file(link))
-            }
-            #[cfg(not(windows))]
-            {
-                fs::remove_file(link).or_else(|_| fs::remove_dir(link))
-            }
-        }
-    };
+    // Windows requires `remove_dir` for directory links and `remove_file`
+    // for file links. This tool only creates directory links, so try
+    // `remove_dir` first and fall back to `remove_file` (broken/file links).
+    #[cfg(windows)]
+    let result = fs::remove_dir(link).or_else(|_| fs::remove_file(link));
 
     result.context(format!("failed to remove symlink at {}", link.display()))
 }
