@@ -330,7 +330,7 @@ fn check_orphaned_projects(kb_root: &Path) -> Check {
 /// Check that a sparse-checkout, when active, matches the configured
 /// subscriptions (`active_projects` is the source of truth).
 fn check_sparse(kb_root: &Path) -> Check {
-    let enabled = match sparse::sparse_enabled(kb_root) {
+    let enabled = match sparse::enabled(kb_root) {
         Ok(e) => e,
         Err(_) => {
             return Check {
@@ -363,7 +363,7 @@ fn check_sparse(kb_root: &Path) -> Check {
         }
     };
 
-    let materialized = sparse::subscribed_sparse_projects(kb_root).unwrap_or_default();
+    let materialized = sparse::subscribed_projects(kb_root).unwrap_or_default();
 
     let mut missing: Vec<String> = configured
         .iter()

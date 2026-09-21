@@ -1270,31 +1270,126 @@ fn test_subscribe_not_git_repo_errors() {
 }
 
 #[test]
+fn test_subscribe_dry_run_reports_plan_without_changes() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha", "--dry-run", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "exit: {:?}", out.status.code());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"dry_run\": true"), "stdout: {}", stdout);
+    assert!(
+        stdout.contains("\"sparse_enabled\": false"),
+        "stdout: {}",
+        stdout
+    );
+
+    // Nothing changed: no config written, sparse-checkout untouched.
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    assert!(!config_file.exists(), "dry run must not write config");
+    let raw = git(&["sparse-checkout", "list"], &kb);
+    assert!(String::from_utf8_lossy(&raw.stdout).is_empty());
+    assert!(
+        kb.join("projects/beta/HANDOFF.md").exists(),
+        "dry run must leave the working tree untouched"
+    );
+}
+
+#[test]
+fn test_unsubscribe_unknown_project_is_a_noop() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["unsubscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "exit: {:?}", out.status.code());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Unsubscribed"), "stdout: {}", stdout);
+
+    // A full checkout is never converted just by unsubscribing someone who was
+    // never subscribed, and no config is written.
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    assert!(
+        !config_file.exists(),
+        "noop must not write config: {:?}",
+        config_file
+    );
+    assert!(
+        kb.join("projects/alpha/HANDOFF.md").exists(),
+        "full checkout must be left alone"
+    );
+    let raw = git(&["sparse-checkout", "list"], &kb);
+    assert!(String::from_utf8_lossy(&raw.stdout).is_empty());
+}
+
+#[test]
+fn test_subscribe_to_uncommitted_memory_succeeds() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    // Simulate `kb link kb-cli` on an un-synced device: memory exists on disk
+    // but is not committed yet.
+    let fresh = kb.join("projects").join("fresh");
+    fs::create_dir_all(&fresh).unwrap();
+    fs::write(fresh.join("HANDOFF.md"), "# fresh\n").unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "fresh"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(config.contains("fresh"), "config: {}", config);
+    assert!(
+        fresh.join("HANDOFF.md").exists(),
+        "just-linked memory must not be dropped"
+    );
+}
+
+#[test]
 fn test_doctor_reports_sparse_drift() {
     let dir = TempDir::new().unwrap();
     let (kb, _bare) = setup_kb_git_repo(dir.path());
     let home_dir = TempDir::new().unwrap();
     seed_memory(&kb);
 
-    let envs = |cmd: &mut Command| {
-        cmd.env("HOME", home_dir.path())
-            .env("USERPROFILE", home_dir.path());
-    };
-
-    let mut sub = kb_bin();
-    sub.args(["--kb-root", kb.to_str().unwrap()])
-        .arg("subscribe")
-        .arg("alpha");
-    envs(&mut sub);
-    sub.assert().success();
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
 
     // Healthy: doctor passes the sparse check.
-    let mut healthy = kb_bin();
-    healthy
+    let out = kb_bin()
         .args(["--kb-root", kb.to_str().unwrap()])
-        .args(["doctor", "--json"]);
-    envs(&mut healthy);
-    let out = healthy.output().unwrap();
+        .args(["doctor", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("sparse-checkout matches subscriptions"),
@@ -1310,12 +1405,13 @@ fn test_doctor_reports_sparse_drift() {
     );
     assert!(!kb.join("projects/alpha").exists());
 
-    let mut drift = kb_bin();
-    drift
+    let out = kb_bin()
         .args(["--kb-root", kb.to_str().unwrap()])
-        .args(["doctor", "--json"]);
-    envs(&mut drift);
-    let out = drift.output().unwrap();
+        .args(["doctor", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("\"name\": \"sparse\""), "{}", stdout);
@@ -1327,11 +1423,12 @@ fn test_doctor_reports_sparse_drift() {
     assert!(stdout.contains("kb subscribe alpha"), "{}", stdout);
 
     // The suggested fix reconciles the device.
-    let mut fix = kb_bin();
-    fix.args(["--kb-root", kb.to_str().unwrap()])
-        .arg("subscribe")
-        .arg("alpha");
-    envs(&mut fix);
-    fix.assert().success();
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
     assert!(kb.join("projects/alpha/HANDOFF.md").exists());
 }

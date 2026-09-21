@@ -1,6 +1,7 @@
 pub mod config;
 pub mod discovery;
 pub mod doctor;
+pub mod git;
 pub mod log;
 pub mod paths;
 pub mod platform;
@@ -9,4 +10,5 @@ pub mod refs;
 pub mod search;
 pub mod sparse;
 pub mod state;
+pub mod subscription;
 pub mod sync;

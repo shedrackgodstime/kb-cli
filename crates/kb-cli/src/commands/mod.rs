@@ -14,10 +14,9 @@ pub mod push;
 pub mod rules;
 pub mod search;
 pub mod status;
-pub mod subscribe;
+pub mod subscriptions;
 pub mod sync;
 pub mod unlink;
-pub mod unsubscribe;
 pub mod work;
 
 use anyhow::{Context, Result};
