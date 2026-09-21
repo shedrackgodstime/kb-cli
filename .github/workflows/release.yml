@@ -65,7 +65,7 @@ jobs:
           tool: cargo-ndk
 
       - name: Build release (native)
-        if: matrix.abi == null
+        if: ${{ !matrix.abi }}
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build release (Android)
