@@ -58,11 +58,26 @@ fn git_commit_all(cwd: &Path, msg: &str) {
 fn setup_kb_git_repo(dir: &Path) -> (PathBuf, PathBuf) {
     let kb = fake_kb_root(dir);
     let bare = dir.join("origin.git");
-    assert!(
-        git(&["init", "--bare", bare.to_str().unwrap()], dir)
-            .status
-            .success()
-    );
+    // The bare origin must default to `main` too: CI git defaults to
+    // `master`, which would leave the bare HEAD (and clones) on the wrong
+    // branch, so pushes to `main` would never advance `origin/main`.
+    let mut bare_init = std::process::Command::new("git");
+    bare_init
+        .args(["init", "--bare", "-b", "main", bare.to_str().unwrap()])
+        .current_dir(dir);
+    if !bare_init.output().unwrap().status.success() {
+        // old git: init, then point the bare HEAD at main explicitly.
+        assert!(
+            git(&["init", "--bare", bare.to_str().unwrap()], dir)
+                .status
+                .success()
+        );
+        assert!(
+            git(&["symbolic-ref", "HEAD", "refs/heads/main"], &bare)
+                .status
+                .success()
+        );
+    }
 
     let mut git_init = std::process::Command::new("git");
     git_init.args(["init", "-b", "main"]).current_dir(&kb);
@@ -105,7 +120,7 @@ fn test_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("kb 0.1.0"));
+        .stdout(predicate::str::contains("kb 0.3.0"));
 }
 
 #[test]
