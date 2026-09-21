@@ -96,7 +96,7 @@ jobs:
       - name: Install cargo-zigbuild
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-zigbuild
+          tool: cargo-zigbuild,zig
 
       - name: Cross-compile release
         run: cargo zigbuild --release --target ${{ matrix.target }}

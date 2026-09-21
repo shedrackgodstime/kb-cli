@@ -62,7 +62,7 @@ jobs:
         if: matrix.cross
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-zigbuild
+          tool: cargo-zigbuild,zig
 
       - name: Build release (native)
         if: matrix.cross != true
