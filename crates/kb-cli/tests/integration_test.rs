@@ -120,7 +120,7 @@ fn test_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("kb 0.1.0"));
+        .stdout(predicate::str::contains("kb 0.3.0"));
 }
 
 #[test]
