@@ -65,9 +65,8 @@ jobs:
           ZIG_VERSION=0.16.0
           curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -o zig.tar.xz
           tar -xf zig.tar.xz
-          mkdir -p "$HOME/.local/bin"
-          cp "zig-x86_64-linux-${ZIG_VERSION}/zig" "$HOME/.local/bin/zig"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$PWD/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
+          export PATH="$PWD/zig-x86_64-linux-${ZIG_VERSION}:$PATH"
           zig version
 
       - name: Install cargo-zigbuild (Android)
