@@ -2,9 +2,9 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::Path;
 
-use kb_core::{config, discovery, platform, project};
+use kb_core::{config, discovery, platform, project, refs};
 
-pub fn run(kb_root: Option<&Path>, all: bool, _refs: bool, json: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, all: bool, refs: bool, json: bool, quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let cfg = config::load()?;
     let platform_info = platform::detect_platform();
@@ -131,6 +131,55 @@ pub fn run(kb_root: Option<&Path>, all: bool, _refs: bool, json: bool) -> Result
                     warnings.push(format!("{}: handoff is {}", status.name, age));
                 } else {
                     println!("    handoff:      {}", age);
+                }
+            }
+
+            // Show ref repo details if requested
+            if refs && status.memory_exists {
+                match refs::check_refs_status(&root, &status.name) {
+                    Ok(ref_statuses) => {
+                        let total = ref_statuses.len();
+                        let cloned = ref_statuses
+                            .iter()
+                            .filter(|s| matches!(s.status, refs::RefStatusKind::UpToDate))
+                            .count();
+                        let missing = ref_statuses
+                            .iter()
+                            .filter(|s| matches!(s.status, refs::RefStatusKind::Missing))
+                            .count();
+                        let mismatch = ref_statuses
+                            .iter()
+                            .filter(|s| matches!(s.status, refs::RefStatusKind::Mismatch { .. }))
+                            .count();
+                        let unknown = ref_statuses
+                            .iter()
+                            .filter(|s| matches!(s.status, refs::RefStatusKind::Unknown))
+                            .count();
+
+                        let mut parts = vec![];
+                        if cloned > 0 {
+                            parts.push(format!("{} cloned", cloned));
+                        }
+                        if missing > 0 {
+                            parts.push(format!("{} missing", missing));
+                        }
+                        if mismatch > 0 {
+                            parts.push(format!("{} mismatch", mismatch));
+                        }
+                        if unknown > 0 {
+                            parts.push(format!("{} unknown", unknown));
+                        }
+
+                        let detail = if parts.is_empty() {
+                            "no registered references".to_string()
+                        } else {
+                            format!("{} registered, {}", total, parts.join(", "))
+                        };
+                        println!("    refs:         {}", detail);
+                    }
+                    Err(_) => {
+                        println!("    refs:         {}", "error checking refs".red());
+                    }
                 }
             }
 

@@ -52,6 +52,10 @@ enum Commands {
     Unlink {
         /// Project name or path
         project: String,
+
+        /// Do not touch ~/.gitignore
+        #[arg(long)]
+        keep_gitignore: bool,
     },
 
     /// Move a project's memory to archive/ (or restore it with --restore)
@@ -112,6 +116,10 @@ enum Commands {
         /// Shallow clone (depth=1)
         #[arg(long)]
         shallow: bool,
+
+        /// Full clone (no depth limit)
+        #[arg(long)]
+        full: bool,
 
         /// Show what would be cloned without doing it
         #[arg(long)]
@@ -337,28 +345,48 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init { kb_root } => commands::init::run(kb_root.as_deref(), cli.json),
+        Commands::Init { kb_root } => commands::init::run(kb_root.as_deref(), cli.json, cli.quiet),
         Commands::Link { project } => {
-            commands::link::run(cli.kb_root.as_deref(), &project, cli.json)
+            commands::link::run(cli.kb_root.as_deref(), &project, cli.json, cli.quiet)
         }
-        Commands::Unlink { project } => {
-            commands::unlink::run(cli.kb_root.as_deref(), &project, cli.json)
-        }
-        Commands::Archive { project, restore } => {
-            commands::archive::run(cli.kb_root.as_deref(), &project, restore, cli.json)
-        }
+        Commands::Unlink {
+            project,
+            keep_gitignore,
+        } => commands::unlink::run(
+            cli.kb_root.as_deref(),
+            &project,
+            keep_gitignore,
+            cli.json,
+            cli.quiet,
+        ),
+        Commands::Archive { project, restore } => commands::archive::run(
+            cli.kb_root.as_deref(),
+            &project,
+            restore,
+            cli.json,
+            cli.quiet,
+        ),
         Commands::Status { all, refs } => {
-            commands::status::run(cli.kb_root.as_deref(), all, refs, cli.json)
+            commands::status::run(cli.kb_root.as_deref(), all, refs, cli.json, cli.quiet)
         }
-        Commands::Doctor { fix } => commands::doctor::run(cli.kb_root.as_deref(), fix, cli.json),
+        Commands::Doctor { fix } => {
+            commands::doctor::run(cli.kb_root.as_deref(), fix, cli.json, cli.quiet)
+        }
         Commands::Projects {
             active_only,
             verbose,
-        } => commands::projects::run(cli.kb_root.as_deref(), active_only, verbose, cli.json),
+        } => commands::projects::run(
+            cli.kb_root.as_deref(),
+            active_only,
+            verbose,
+            cli.json,
+            cli.quiet,
+        ),
         Commands::CloneRefs {
             project,
             all,
             shallow,
+            full,
             dry_run,
             force,
         } => commands::clone_refs::run(
@@ -366,12 +394,14 @@ fn main() -> anyhow::Result<()> {
             project.as_deref(),
             all,
             shallow,
+            full,
             dry_run,
             force,
             cli.json,
+            cli.quiet,
         ),
         Commands::Sync { projects } => {
-            commands::sync::run(cli.kb_root.as_deref(), &projects, cli.json)
+            commands::sync::run(cli.kb_root.as_deref(), &projects, cli.json, cli.quiet)
         }
         Commands::GlobalSync {
             message,
@@ -383,27 +413,41 @@ fn main() -> anyhow::Result<()> {
             !no_link,
             dry_run,
             cli.json,
+            cli.quiet,
         ),
         Commands::Pull {
             projects,
             link,
             no_link,
-        } => commands::pull::run(cli.kb_root.as_deref(), &projects, link, no_link, cli.json),
+        } => commands::pull::run(
+            cli.kb_root.as_deref(),
+            &projects,
+            link,
+            no_link,
+            cli.json,
+            cli.quiet,
+        ),
         Commands::Push { projects, message } => commands::push::run(
             cli.kb_root.as_deref(),
             &projects,
             message.as_deref(),
             cli.json,
+            cli.quiet,
         ),
         Commands::Export { project, output } => commands::export::run(
             cli.kb_root.as_deref(),
             &project,
             output.as_deref(),
             cli.json,
+            cli.quiet,
         ),
-        Commands::Import { tarball, name } => {
-            commands::import::run(cli.kb_root.as_deref(), &tarball, name.as_deref(), cli.json)
-        }
+        Commands::Import { tarball, name } => commands::import::run(
+            cli.kb_root.as_deref(),
+            &tarball,
+            name.as_deref(),
+            cli.json,
+            cli.quiet,
+        ),
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
             let shell_name = match shell {
@@ -541,7 +585,7 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Commands::Work { project } => {
-            commands::work::run(cli.kb_root.as_deref(), &project, cli.json)
+            commands::work::run(cli.kb_root.as_deref(), &project, cli.json, cli.quiet)
         }
         Commands::Search {
             query,
@@ -558,32 +602,51 @@ fn main() -> anyhow::Result<()> {
                 files_only,
                 case_sensitive,
                 cli.json,
+                cli.quiet,
             )?;
             if !found {
                 std::process::exit(1);
             }
             Ok(())
         }
-        Commands::Done { message } => {
-            commands::done::run(cli.kb_root.as_deref(), message.as_deref(), cli.json)
-        }
+        Commands::Done { message } => commands::done::run(
+            cli.kb_root.as_deref(),
+            message.as_deref(),
+            cli.json,
+            cli.quiet,
+        ),
         Commands::Log {
             limit,
             stat,
             projects,
-        } => commands::log::run(cli.kb_root.as_deref(), limit, stat, &projects, cli.json),
-        Commands::Subscribe { project, dry_run } => {
-            commands::subscriptions::subscribe(cli.kb_root.as_deref(), &project, dry_run, cli.json)
-        }
+        } => commands::log::run(
+            cli.kb_root.as_deref(),
+            limit,
+            stat,
+            &projects,
+            cli.json,
+            cli.quiet,
+        ),
+        Commands::Subscribe { project, dry_run } => commands::subscriptions::subscribe(
+            cli.kb_root.as_deref(),
+            &project,
+            dry_run,
+            cli.json,
+            cli.quiet,
+        ),
         Commands::Unsubscribe { project, dry_run } => commands::subscriptions::unsubscribe(
             cli.kb_root.as_deref(),
             &project,
             dry_run,
             cli.json,
+            cli.quiet,
         ),
-        Commands::Open { project } => {
-            commands::open::run(cli.kb_root.as_deref(), project.as_deref(), cli.json)
-        }
+        Commands::Open { project } => commands::open::run(
+            cli.kb_root.as_deref(),
+            project.as_deref(),
+            cli.json,
+            cli.quiet,
+        ),
         Commands::Rules {
             project,
             all,
@@ -594,12 +657,15 @@ fn main() -> anyhow::Result<()> {
             all,
             dry_run,
             cli.json,
+            cli.quiet,
         ),
         Commands::Config { command } => match command {
-            ConfigCommand::List => commands::config::run_list(cli.json),
-            ConfigCommand::Get { key } => commands::config::run_get(cli.json, &key),
-            ConfigCommand::Set { key, value } => commands::config::run_set(cli.json, &key, &value),
-            ConfigCommand::Unset { key } => commands::config::run_unset(cli.json, &key),
+            ConfigCommand::List => commands::config::run_list(cli.json, cli.quiet),
+            ConfigCommand::Get { key } => commands::config::run_get(cli.json, &key, cli.quiet),
+            ConfigCommand::Set { key, value } => {
+                commands::config::run_set(cli.json, &key, &value, cli.quiet)
+            }
+            ConfigCommand::Unset { key } => commands::config::run_unset(cli.json, &key, cli.quiet),
         },
     }
 }

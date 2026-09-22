@@ -10,6 +10,7 @@ pub fn run(
     stat: bool,
     projects: &[String],
     json: bool,
+    quiet: bool,
 ) -> Result<()> {
     let opts = log::LogOptions {
         limit,

@@ -97,7 +97,12 @@ pub fn link(
 }
 
 /// Unlink a project — remove symlinks, keep memory.
-pub fn unlink(kb_root: &Path, project_name: &str, repo_dir: &Path) -> Result<UnlinkResult> {
+pub fn unlink(
+    kb_root: &Path,
+    project_name: &str,
+    repo_dir: &Path,
+    _keep_gitignore: bool,
+) -> Result<UnlinkResult> {
     let memory_dir = kb_root.join("projects").join(project_name);
 
     let scratch_link = repo_dir.join("scratch");

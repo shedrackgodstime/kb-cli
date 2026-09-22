@@ -4,40 +4,44 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use kb_core::{config, discovery, paths, platform};
+use kb_core::{config, discovery, paths, platform, project};
 
-pub fn run(kb_root: Option<&Path>, json: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, json: bool, quiet: bool) -> Result<()> {
     // Try to discover existing KB root
     let discovery = discovery::discover_kb_root(kb_root);
 
     match discovery {
         Ok((root, source)) => {
             // KB already exists — just configure it
-            configure_existing(&root, source, json)
+            configure_existing(&root, source, json, quiet)
         }
         Err(_) => {
             // No KB found — offer to clone or create
-            setup_new_machine(kb_root, json)
+            setup_new_machine(kb_root, json, quiet)
         }
     }
 }
 
 /// Configure an existing knowledge-base.
-fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: bool) -> Result<()> {
+fn configure_existing(
+    root: &Path,
+    source: discovery::DiscoverySource,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
     // 1. Write config
     config::update(|cfg| {
         cfg.kb_root = Some(root.to_path_buf());
     })?;
 
     // 2. Setup global gitignore (~/.gitignore)
-    let home = paths::home_dir()?;
-    let gitignore = home.join(".gitignore");
-    let gitignore_updated = setup_gitignore(&gitignore)?;
+    let gitignore_updated = project::ensure_global_gitignore()?;
 
     // 3. Check git config for global excludes
     let git_config_ok = check_global_excludes();
 
     let platform_info = platform::detect_platform();
+    let gitignore = paths::home_dir()?.join(".gitignore");
 
     if json {
         let output = serde_json::json!({
@@ -100,7 +104,7 @@ fn configure_existing(root: &Path, source: discovery::DiscoverySource, json: boo
 }
 
 /// Setup on a fresh machine — clone or create the knowledge-base.
-fn setup_new_machine(kb_root: Option<&Path>, json: bool) -> Result<()> {
+fn setup_new_machine(kb_root: Option<&Path>, json: bool, quiet: bool) -> Result<()> {
     let home = paths::home_dir()?;
     let default_path = home.join("knowledge-base");
 
@@ -160,57 +164,6 @@ fn setup_new_machine(kb_root: Option<&Path>, json: bool) -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Setup global gitignore file (~/.gitignore).
-fn setup_gitignore(gitignore: &Path) -> Result<bool> {
-    let mut updated = false;
-
-    if !gitignore.exists() {
-        fs::write(
-            gitignore,
-            "# kb symlinks and rules (personal, never commit)\n/scratch\n/.agent-rules\n/kb-rules.md\n",
-        )?;
-        updated = true;
-    } else {
-        let content = fs::read_to_string(gitignore)?;
-        let lines: Vec<&str> = content.lines().collect();
-
-        let has_scratch = lines.iter().any(|l| {
-            let t = l.trim();
-            t == "/scratch" || t == "scratch"
-        });
-        let has_rules = lines.iter().any(|l| {
-            let t = l.trim();
-            t == "/.agent-rules" || t == ".agent-rules"
-        });
-        let has_kb_rules = lines
-            .iter()
-            .any(|l| l.trim() == "/kb-rules.md" || l.trim() == "kb-rules.md");
-
-        let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
-
-        if !has_scratch {
-            new_lines.push("/scratch".to_string());
-            updated = true;
-        }
-        if !has_rules {
-            new_lines.push("/.agent-rules".to_string());
-            updated = true;
-        }
-        if !has_kb_rules {
-            new_lines.push("/kb-rules.md".to_string());
-            updated = true;
-        }
-
-        if updated {
-            let tmp = gitignore.with_extension("tmp");
-            fs::write(&tmp, new_lines.join("\n"))?;
-            fs::rename(&tmp, gitignore)?;
-        }
-    }
-
-    Ok(updated)
 }
 
 /// Check if git global excludesFile is configured.

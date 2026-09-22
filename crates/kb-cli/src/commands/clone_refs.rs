@@ -9,10 +9,15 @@ pub fn run(
     project: Option<&str>,
     all: bool,
     shallow: bool,
+    full: bool,
     dry_run: bool,
     force: bool,
     json: bool,
+    quiet: bool,
 ) -> Result<()> {
+    // --full wins over --shallow; default is full clone (shallow=false)
+    let do_shallow = shallow && !full;
+
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let cfg = config::load()?;
 
@@ -115,13 +120,13 @@ pub fn run(
                         }
                         total_cloned += 1;
                     } else if json {
-                        match refs::clone_ref(&status.entry, &status.local_path, shallow) {
+                        match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
                             Ok(()) => total_cloned += 1,
                             Err(e) => total_errors.push(format!("{}: {}", status.entry.name, e)),
                         }
                     } else {
                         print!("  {} {} ", "→".cyan(), status.entry.name.bold());
-                        match refs::clone_ref(&status.entry, &status.local_path, shallow) {
+                        match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
                             Ok(()) => {
                                 println!("{}", "cloned".green());
                                 total_cloned += 1;
@@ -158,7 +163,7 @@ pub fn run(
                                 );
                             }
                         } else if json {
-                            match refs::clone_ref(&status.entry, &status.local_path, shallow) {
+                            match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
                                 Ok(()) => total_cloned += 1,
                                 Err(e) => {
                                     total_errors.push(format!("{}: {}", status.entry.name, e))
@@ -166,7 +171,7 @@ pub fn run(
                             }
                         } else {
                             print!("  {} {} ", "!".yellow().bold(), status.entry.name.bold());
-                            match refs::clone_ref(&status.entry, &status.local_path, shallow) {
+                            match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
                                 Ok(()) => {
                                     println!("{}", "re-cloned".green());
                                     total_cloned += 1;

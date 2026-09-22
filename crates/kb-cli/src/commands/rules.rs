@@ -13,6 +13,7 @@ pub fn run(
     all: bool,
     dry_run: bool,
     json: bool,
+    quiet: bool,
 ) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let templates_dir = root.join("templates").join("project");

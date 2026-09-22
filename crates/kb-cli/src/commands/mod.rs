@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 /// Accepts a quick-start name (resolved against `~/Projects/<name>`) or a full
 /// path to a project repo. When a path like `.` or `..` is given, the current
 /// directory name is used.
-pub(crate) fn resolve_project(input: &str) -> Result<(String, PathBuf)> {
+pub fn resolve_project(input: &str) -> Result<(String, PathBuf)> {
     let expanded = paths::expand_home(Path::new(input))?;
 
     if expanded.exists() && expanded.is_dir() {

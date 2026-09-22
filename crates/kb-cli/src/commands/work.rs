@@ -4,7 +4,7 @@ use std::path::Path;
 
 use kb_core::{discovery, paths, project, state, sync};
 
-pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool, quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     // 1. Git sync (pull --rebase)
@@ -12,7 +12,7 @@ pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool) -> Result<()>
 
     // 2. Link the project
     let templates_dir = root.join("templates").join("project");
-    let repo_dir = default_project_dir(project_name)?;
+    let repo_dir = paths::default_project_dir(project_name)?;
 
     if repo_dir.exists() {
         let _ = project::link(&root, project_name, &repo_dir, &templates_dir);
@@ -80,9 +80,4 @@ pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool) -> Result<()>
     }
 
     Ok(())
-}
-
-fn default_project_dir(name: &str) -> Result<std::path::PathBuf> {
-    let home = paths::home_dir()?;
-    Ok(home.join("Projects").join(name))
 }

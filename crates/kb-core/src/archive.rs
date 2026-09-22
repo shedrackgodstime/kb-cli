@@ -106,7 +106,7 @@ pub fn archive_project(kb_root: &Path, project_name: &str, restore: bool) -> Res
     // that comparison (canonicalization falls back and mismatches).
     let unlinked = repo_dir
         .as_ref()
-        .map(|repo| project::unlink(kb_root, project_name, repo))
+        .map(|repo| project::unlink(kb_root, project_name, repo, true))
         .transpose()
         .context("failed to unlink archived project")?;
 

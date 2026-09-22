@@ -2,16 +2,23 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
+use super::resolve_project;
 use kb_core::{discovery, paths, project};
 
-pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()> {
+pub fn run(
+    kb_root: Option<&Path>,
+    project_input: &str,
+    keep_gitignore: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     // Resolve project name and repo path
     let (project_name, repo_dir) = resolve_project(project_input)?;
 
-    let result =
-        project::unlink(&root, &project_name, &repo_dir).context("failed to unlink project")?;
+    let result = project::unlink(&root, &project_name, &repo_dir, keep_gitignore)
+        .context("failed to unlink project")?;
 
     if json {
         let output = serde_json::json!({
@@ -57,28 +64,4 @@ pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()
     }
 
     Ok(())
-}
-
-fn resolve_project(input: &str) -> Result<(String, std::path::PathBuf)> {
-    let expanded = paths::expand_home(std::path::Path::new(input))?;
-
-    if expanded.exists() && expanded.is_dir() {
-        let repo_dir = expanded
-            .canonicalize()
-            .context("cannot canonicalize project path")?;
-        let name = repo_dir
-            .file_name()
-            .context("cannot determine project name from path")?
-            .to_string_lossy()
-            .to_string();
-        return Ok((name, repo_dir));
-    }
-
-    if input.contains('/') || input.contains('\\') {
-        anyhow::bail!("project path does not exist: {}", expanded.display());
-    }
-
-    let name = input.to_string();
-    let repo_dir = paths::default_project_dir(&name)?;
-    Ok((name, repo_dir))
 }

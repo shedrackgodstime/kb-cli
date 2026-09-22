@@ -4,7 +4,14 @@ use std::path::Path;
 
 use kb_core::{archive, discovery};
 
-pub fn run(kb_root: Option<&Path>, project_input: &str, restore: bool, json: bool) -> Result<()> {
+pub fn run(
+    kb_root: Option<&Path>,
+    project_input: &str,
+    restore: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
+    let _ = quiet;
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     // Archive takes the project *name*: unlike link/unlink it must work for

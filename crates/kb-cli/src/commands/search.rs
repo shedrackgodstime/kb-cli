@@ -12,6 +12,7 @@ pub fn run(
     files_only: bool,
     case_sensitive: bool,
     json: bool,
+    quiet: bool,
 ) -> Result<bool> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 

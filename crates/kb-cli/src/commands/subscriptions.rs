@@ -4,23 +4,37 @@ use std::path::Path;
 
 use kb_core::subscription::{self, SubscriptionResult};
 
-pub fn subscribe(kb_root: Option<&Path>, project: &str, dry_run: bool, json: bool) -> Result<()> {
+pub fn subscribe(
+    kb_root: Option<&Path>,
+    project: &str,
+    dry_run: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
     render(
         subscription::subscribe(kb_root, project, dry_run)?,
         "Subscribed to",
         json,
+        quiet,
     )
 }
 
-pub fn unsubscribe(kb_root: Option<&Path>, project: &str, dry_run: bool, json: bool) -> Result<()> {
+pub fn unsubscribe(
+    kb_root: Option<&Path>,
+    project: &str,
+    dry_run: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
     render(
         subscription::unsubscribe(kb_root, project, dry_run)?,
         "Unsubscribed from",
         json,
+        quiet,
     )
 }
 
-fn render(result: SubscriptionResult, heading: &str, json: bool) -> Result<()> {
+fn render(result: SubscriptionResult, heading: &str, json: bool, quiet: bool) -> Result<()> {
     if json {
         return print_json(&result);
     }

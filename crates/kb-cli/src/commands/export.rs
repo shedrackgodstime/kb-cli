@@ -4,7 +4,13 @@ use std::path::Path;
 
 use kb_core::sync;
 
-pub fn run(kb_root: Option<&Path>, project: &str, output: Option<&Path>, json: bool) -> Result<()> {
+pub fn run(
+    kb_root: Option<&Path>,
+    project: &str,
+    output: Option<&Path>,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
     let dest = sync::export_project(kb_root, project, output)?;
 
     if json {

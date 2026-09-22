@@ -6,7 +6,7 @@ use kb_core::{discovery, project};
 
 use super::resolve_project;
 
-pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, project_input: &str, json: bool, quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let templates_dir = root.join("templates").join("project");
 

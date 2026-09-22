@@ -4,7 +4,13 @@ use std::path::Path;
 
 use kb_core::sync;
 
-pub fn run(kb_root: Option<&Path>, tarball: &Path, name: Option<&str>, json: bool) -> Result<()> {
+pub fn run(
+    kb_root: Option<&Path>,
+    tarball: &Path,
+    name: Option<&str>,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
     let imported_name = sync::import_project(kb_root, tarball, name)?;
 
     if json {

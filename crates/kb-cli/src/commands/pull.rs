@@ -10,6 +10,7 @@ pub fn run(
     link: bool,
     no_link: bool,
     json: bool,
+    quiet: bool,
 ) -> Result<()> {
     let do_link = link || !no_link; // default: re-link unless --no-link
 

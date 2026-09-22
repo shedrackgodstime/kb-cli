@@ -224,7 +224,7 @@ pub fn global_sync(
         let cfg = config::load()?;
         let templates_dir = root.join("templates").join("project");
         for project_name in &cfg.active_projects {
-            let repo_dir = default_project_dir(project_name)?;
+            let repo_dir = paths::default_project_dir(project_name)?;
             if repo_dir.exists() {
                 let _ = project::link(&root, project_name, &repo_dir, &templates_dir);
                 result.linked_projects.push(project_name.clone());
@@ -259,7 +259,7 @@ pub fn pull(kb_root: Option<&Path>, link: bool, only_projects: &[String]) -> Res
         };
 
         for project_name in &projects_to_link {
-            let repo_dir = default_project_dir(project_name)?;
+            let repo_dir = paths::default_project_dir(project_name)?;
             if repo_dir.exists() {
                 let _ = project::link(&root, project_name, &repo_dir, &templates_dir);
                 linked_projects.push(project_name.clone());
@@ -329,7 +329,7 @@ pub fn sync(kb_root: Option<&Path>, only_projects: &[String]) -> Result<SyncResu
     };
 
     for project_name in &projects_to_link {
-        let repo_dir = default_project_dir(project_name)?;
+        let repo_dir = paths::default_project_dir(project_name)?;
         if repo_dir.exists() {
             let _ = project::link(&root, project_name, &repo_dir, &templates_dir);
             linked_projects.push(project_name.clone());
@@ -564,12 +564,6 @@ fn rev_count(root: &Path, range: &str) -> Result<u64> {
         .trim()
         .parse::<u64>()
         .context(format!("invalid commit count from git: {}", count.trim()))
-}
-
-/// Default project directory for a named project.
-fn default_project_dir(name: &str) -> Result<std::path::PathBuf> {
-    let home = paths::home_dir()?;
-    Ok(home.join("Projects").join(name))
 }
 
 /// Export project memory to a portable tarball.
