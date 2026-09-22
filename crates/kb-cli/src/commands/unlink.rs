@@ -63,12 +63,15 @@ fn resolve_project(input: &str) -> Result<(String, std::path::PathBuf)> {
     let expanded = paths::expand_home(std::path::Path::new(input))?;
 
     if expanded.exists() && expanded.is_dir() {
-        let name = expanded
+        let repo_dir = expanded
+            .canonicalize()
+            .context("cannot canonicalize project path")?;
+        let name = repo_dir
             .file_name()
             .context("cannot determine project name from path")?
             .to_string_lossy()
             .to_string();
-        return Ok((name, expanded));
+        return Ok((name, repo_dir));
     }
 
     if input.contains('/') || input.contains('\\') {

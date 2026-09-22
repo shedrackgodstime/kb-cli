@@ -34,10 +34,12 @@ pub(crate) fn resolve_project(input: &str) -> Result<(String, PathBuf)> {
     let expanded = paths::expand_home(Path::new(input))?;
 
     if expanded.exists() && expanded.is_dir() {
-        let name = expanded
+        let repo_dir = expanded
             .canonicalize()
-            .ok()
-            .and_then(|p| p.file_name().map(|s| s.to_string_lossy().to_string()))
+            .context("cannot canonicalize project path")?;
+        let name = repo_dir
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| input.to_string());
 
         let name = if name == "." || name == ".." {
@@ -51,17 +53,20 @@ pub(crate) fn resolve_project(input: &str) -> Result<(String, PathBuf)> {
             name
         };
 
-        return Ok((name, expanded));
+        return Ok((name, repo_dir));
     }
 
     if input.contains('/') || input.contains('\\') {
         if expanded.exists() {
-            let name = expanded
+            let repo_dir = expanded
+                .canonicalize()
+                .context("cannot canonicalize project path")?;
+            let name = repo_dir
                 .file_name()
                 .context("cannot determine project name from path")?
                 .to_string_lossy()
                 .to_string();
-            return Ok((name, expanded));
+            return Ok((name, repo_dir));
         }
         anyhow::bail!("project path does not exist: {}", expanded.display());
     }

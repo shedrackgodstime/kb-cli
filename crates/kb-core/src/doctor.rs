@@ -103,7 +103,42 @@ fn err_fix(name: &'static str, err: impl std::fmt::Display) -> Fix {
 fn fix_config(kb_root: &Path) -> Fix {
     match config::load() {
         Ok(cfg) if cfg.kb_root.as_deref() == Some(kb_root) && kb_root.exists() => {
-            noop("config", "already valid")
+            // `kb link .` used to store the literal relative path (cwd-dependent
+            // health checks). Rewrite any relative repo_path entries to the
+            // conventional absolute default project directory.
+            let relative: Vec<String> = cfg
+                .projects
+                .iter()
+                .filter(|(_, p)| {
+                    p.repo_path
+                        .as_ref()
+                        .is_some_and(|r| r.as_path().is_relative())
+                })
+                .map(|(name, _)| name.clone())
+                .collect();
+
+            if relative.is_empty() {
+                return noop("config", "already valid");
+            }
+
+            let mut rewritten = vec![];
+            match config::update(|c| {
+                for name in &relative {
+                    if let (Ok(path), Some(entry)) =
+                        (paths::default_project_dir(name), c.projects.get_mut(name))
+                    {
+                        entry.repo_path = Some(path);
+                        rewritten.push(name.clone());
+                    }
+                }
+            }) {
+                Ok(()) if !rewritten.is_empty() => ok_fix(
+                    "config",
+                    format!("canonicalized repo_path for {}", rewritten.join(", ")),
+                ),
+                Ok(()) => noop("config", "already valid"),
+                Err(e) => err_fix("config", e),
+            }
         }
         Ok(cfg) if cfg.kb_root.as_deref() == Some(kb_root) => {
             // Config points here but the directory is missing — no config

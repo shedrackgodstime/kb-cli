@@ -215,6 +215,140 @@ fn test_link_and_status() {
 }
 
 #[test]
+fn test_link_dot_stores_absolute_repo_path() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let repo = fake_project_repo(dir.path(), "myapp");
+    let home_dir = TempDir::new().unwrap();
+    let config_file = home_dir.path().join(".kb/config.toml");
+
+    // README quick-start form: `kb link .` from the project directory.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["link", "."])
+        .current_dir(&repo)
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myapp"));
+
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(
+        !config.contains("repo_path = '.'"),
+        "must not store the literal relative path: {}",
+        config
+    );
+    assert!(
+        config.contains("myapp"),
+        "repo_path should resolve to the canonical project dir: {}",
+        config
+    );
+}
+
+#[test]
+fn test_status_and_doctor_are_cwd_independent() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let repo_a = fake_project_repo(dir.path(), "myapp");
+    let repo_b = fake_project_repo(dir.path(), "otrapp");
+    let home_dir = TempDir::new().unwrap();
+    let neutral = TempDir::new().unwrap();
+
+    for repo in [&repo_a, &repo_b] {
+        kb_bin()
+            .args([
+                "--kb-root",
+                kb.to_str().unwrap(),
+                "link",
+                repo.to_str().unwrap(),
+            ])
+            .env("HOME", home_dir.path())
+            .env("USERPROFILE", home_dir.path())
+            .assert()
+            .success();
+    }
+
+    // Neither health-check surface may be cwd-dependent: running from a
+    // neutral directory must not flag either project's symlinks as broken.
+    for cmd in ["status", "doctor"] {
+        kb_bin()
+            .args(["--kb-root", kb.to_str().unwrap(), cmd])
+            .current_dir(&neutral)
+            .env("HOME", home_dir.path())
+            .env("USERPROFILE", home_dir.path())
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("broken").not());
+    }
+
+    // Both projects still listed from the neutral cwd.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "status"])
+        .current_dir(&neutral)
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myapp"))
+        .stdout(predicate::str::contains("otrapp"));
+}
+
+#[test]
+fn test_doctor_fix_canonicalizes_relative_repo_path() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    let config_dir = home_dir.path().join(".kb");
+    let config_file = config_dir.join("config.toml");
+    fs::create_dir_all(&config_dir).unwrap();
+
+    // Seed legacy drift directly: kb_root matches the canonical form the CLI
+    // derives (configs written by `kb init` store the same form), but myapp's
+    // repo_path is the literal relative "." that `kb link .` used to store.
+    let kb_root = kb.canonicalize().unwrap().to_string_lossy().into_owned();
+    fs::write(
+        &config_file,
+        format!(
+            r#"kb_root = '{kb_root}'
+
+active_projects = ['myapp']
+
+[projects.myapp]
+repo_path = '.'
+"#,
+        ),
+    )
+    .unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "doctor", "--fix"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "canonicalized repo_path for myapp",
+        ));
+
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(
+        !config.contains("repo_path = '.'"),
+        "doctor --fix must canonicalize relative repo_path: {}",
+        config
+    );
+    let repo_line = config
+        .lines()
+        .find(|l| l.contains("repo_path"))
+        .expect("repo_path must still be present");
+    assert!(
+        repo_line.contains("myapp") && repo_line.contains("Projects"),
+        "repo_path must be rewritten to the absolute default dir: {}",
+        config
+    );
+}
+
+#[test]
 fn test_global_sync_works_on_sparse_worktree() {
     let dir = TempDir::new().unwrap();
     let (kb, bare) = setup_kb_git_repo(dir.path());
