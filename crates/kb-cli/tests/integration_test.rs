@@ -1529,6 +1529,7 @@ fn editor_shim(dir: &Path, log_file: &Path) -> String {
     }
     #[cfg(not(windows))]
     {
+        use std::os::unix::fs::PermissionsExt;
         let hook = dir.join("open-hook.sh");
         fs::write(
             &hook,
