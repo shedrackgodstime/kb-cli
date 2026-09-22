@@ -607,7 +607,13 @@ fn test_link_writes_kb_rules_from_template() {
 
     let content = fs::read_to_string(repo.join("kb-rules.md")).unwrap();
     assert!(content.contains("# myapp rules"));
-    let repo_display = repo.to_string_lossy().replace('\\', "/");
+    // Template renders the canonical repo dir (macOS /tmp -> /private/tmp).
+    let canonical_repo = repo.canonicalize().unwrap();
+    let repo_display = canonical_repo.to_string_lossy().replace('\\', "/");
+    let repo_display = repo_display
+        .strip_prefix("//?/")
+        .unwrap_or(&repo_display)
+        .to_string();
     assert!(content.contains(&format!("Repo: {}", repo_display)));
     let canonical_kb = kb.canonicalize().unwrap();
     let kb_display = canonical_kb.to_string_lossy().replace('\\', "/");
