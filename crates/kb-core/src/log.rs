@@ -1,9 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use crate::discovery;
-use crate::paths;
+use crate::{discovery, git, paths};
 
 /// A single commit from the knowledge-base history.
 #[derive(Debug, Clone, PartialEq)]
@@ -51,7 +49,7 @@ pub struct LogResult {
 pub fn log(kb_root: Option<&Path>, opts: &LogOptions) -> Result<LogResult> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
-    if !is_git_repo(&root) {
+    if !git::is_inside_work_tree(&root) {
         anyhow::bail!(
             "{} is not a git repository.\n\
              Initialize it with `kb init` (or `git init`) before using `kb log`.",
@@ -76,19 +74,7 @@ pub fn log(kb_root: Option<&Path>, opts: &LogOptions) -> Result<LogResult> {
         }
     }
 
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(&root)
-        .args(&args)
-        .output()
-        .context("failed to run git log")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git log failed: {}", stderr.trim());
-    }
-
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = git::checked(&root, &args, "git log")?;
     let entries = parse_entries(&raw);
 
     Ok(LogResult {
@@ -113,17 +99,6 @@ fn parse_entries(raw: &str) -> Vec<LogEntry> {
             })
         })
         .collect()
-}
-
-/// Whether `root` is inside a git work tree.
-fn is_git_repo(root: &Path) -> bool {
-    Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
 }
 
 #[cfg(test)]

@@ -204,6 +204,49 @@ fn test_link_and_status() {
 }
 
 #[test]
+fn test_global_sync_works_on_sparse_worktree() {
+    let dir = TempDir::new().unwrap();
+    let (kb, bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    // Convert to sparse: only alpha subscribed.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+    assert!(!kb.join("projects/beta").exists());
+
+    // Edit subscribed + always-on files while unsubscribed memory stays out.
+    fs::write(kb.join("projects/alpha/HANDOFF.md"), "# updated\n").unwrap();
+    fs::write(kb.join("INDEX.md"), "# index v2\n").unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["global-sync", "--no-link"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Commit"))
+        .stdout(predicate::str::contains("Push"));
+
+    // Remote got the sync and the worktree is clean afterwards.
+    let log = git(&["log", "--oneline"], &bare);
+    assert!(
+        String::from_utf8_lossy(&log.stdout).contains("sync knowledge base"),
+        "{}",
+        String::from_utf8_lossy(&log.stdout)
+    );
+    let status = git(&["status", "--porcelain"], &kb);
+    assert!(String::from_utf8_lossy(&status.stdout).trim().is_empty());
+    assert!(!kb.join("projects/beta").exists());
+}
+
+#[test]
 fn test_unlink() {
     let dir = TempDir::new().unwrap();
     let kb = fake_kb_root(dir.path());
@@ -1077,4 +1120,315 @@ fn test_config_unset_clears_value() {
         "stdout: {}",
         stdout
     );
+}
+
+/// Seed a KB repo with committed top-level dir and project memories.
+fn seed_memory(kb: &Path) {
+    fs::create_dir_all(kb.join("agent-rules")).unwrap();
+    fs::write(kb.join("agent-rules/README.md"), "# agent rules\n").unwrap();
+    for name in ["alpha", "beta"] {
+        fs::create_dir_all(kb.join("projects").join(name)).unwrap();
+        fs::write(
+            kb.join("projects").join(name).join("HANDOFF.md"),
+            format!("# {name}\n"),
+        )
+        .unwrap();
+    }
+    git_commit_all(kb, "seed memory");
+}
+
+#[test]
+fn test_subscribe_roundtrip() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    // Subscribe to alpha: enables sparse-checkout, keeps only alpha.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "exit: {:?}", out.status.code());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Subscribed"), "stdout: {}", stdout);
+    assert!(stdout.contains("alpha"));
+
+    // Config records the subscription.
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(config.contains("alpha"), "config: {}", config);
+    assert!(
+        !config.contains("beta"),
+        "config must not list beta: {}",
+        config
+    );
+
+    // Sparse cone contains alpha + always-on top-level dir; top-level files
+    // stay; unsubscribed project memory is gone from the working tree.
+    let list = git(&["sparse-checkout", "list"], &kb);
+    let cone = String::from_utf8_lossy(&list.stdout);
+    assert!(cone.contains("projects/alpha"), "cone: {}", cone);
+    assert!(cone.contains("agent-rules"), "cone: {}", cone);
+    assert!(kb.join("projects/alpha/HANDOFF.md").exists());
+    assert!(kb.join("INDEX.md").exists(), "top-level file must stay");
+    assert!(
+        !kb.join("projects/beta").exists(),
+        "unsubscribed memory must not be checked out"
+    );
+
+    // Subscribe to beta: it gets materialized too.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "beta"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+    assert!(kb.join("projects/beta/HANDOFF.md").exists());
+    assert!(kb.join("projects/alpha/HANDOFF.md").exists());
+    let list = git(&["sparse-checkout", "list"], &kb);
+    let cone = String::from_utf8_lossy(&list.stdout);
+    assert!(cone.contains("projects/beta"), "cone: {}", cone);
+
+    // Unsubscribe alpha: memory leaves the device, config updated.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["unsubscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Unsubscribed"), "stdout: {}", stdout);
+
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(!config.contains("alpha"), "config: {}", config);
+    assert!(!kb.join("projects/alpha").exists());
+    assert!(kb.join("projects/beta/HANDOFF.md").exists());
+}
+
+#[test]
+fn test_subscribe_idempotent() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Subscribed"));
+}
+
+#[test]
+fn test_subscribe_unknown_project_errors() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "nope"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no project memory"));
+}
+
+#[test]
+fn test_subscribe_not_git_repo_errors() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not a git repository"));
+}
+
+#[test]
+fn test_subscribe_dry_run_reports_plan_without_changes() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha", "--dry-run", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "exit: {:?}", out.status.code());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"dry_run\": true"), "stdout: {}", stdout);
+    assert!(
+        stdout.contains("\"sparse_enabled\": false"),
+        "stdout: {}",
+        stdout
+    );
+
+    // Nothing changed: no config written, sparse-checkout untouched.
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    assert!(!config_file.exists(), "dry run must not write config");
+    let raw = git(&["sparse-checkout", "list"], &kb);
+    assert!(String::from_utf8_lossy(&raw.stdout).is_empty());
+    assert!(
+        kb.join("projects/beta/HANDOFF.md").exists(),
+        "dry run must leave the working tree untouched"
+    );
+}
+
+#[test]
+fn test_unsubscribe_unknown_project_is_a_noop() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["unsubscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "exit: {:?}", out.status.code());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Unsubscribed"), "stdout: {}", stdout);
+
+    // A full checkout is never converted just by unsubscribing someone who was
+    // never subscribed, and no config is written.
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    assert!(
+        !config_file.exists(),
+        "noop must not write config: {:?}",
+        config_file
+    );
+    assert!(
+        kb.join("projects/alpha/HANDOFF.md").exists(),
+        "full checkout must be left alone"
+    );
+    let raw = git(&["sparse-checkout", "list"], &kb);
+    assert!(String::from_utf8_lossy(&raw.stdout).is_empty());
+}
+
+#[test]
+fn test_subscribe_to_uncommitted_memory_succeeds() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    // Simulate `kb link kb-cli` on an un-synced device: memory exists on disk
+    // but is not committed yet.
+    let fresh = kb.join("projects").join("fresh");
+    fs::create_dir_all(&fresh).unwrap();
+    fs::write(fresh.join("HANDOFF.md"), "# fresh\n").unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "fresh"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(config.contains("fresh"), "config: {}", config);
+    assert!(
+        fresh.join("HANDOFF.md").exists(),
+        "just-linked memory must not be dropped"
+    );
+}
+
+#[test]
+fn test_doctor_reports_sparse_drift() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    // Healthy: doctor passes the sparse check.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["doctor", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("sparse-checkout matches subscriptions"),
+        "{}",
+        stdout
+    );
+
+    // Simulate external drift: drop alpha from the cone behind kb's back.
+    assert!(
+        git(&["sparse-checkout", "set", "agent-rules"], &kb)
+            .status
+            .success()
+    );
+    assert!(!kb.join("projects/alpha").exists());
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["doctor", "--json"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"name\": \"sparse\""), "{}", stdout);
+    assert!(
+        stdout.contains("subscribed but not checked out"),
+        "{}",
+        stdout
+    );
+    assert!(stdout.contains("kb subscribe alpha"), "{}", stdout);
+
+    // The suggested fix reconciles the device.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+    assert!(kb.join("projects/alpha/HANDOFF.md").exists());
 }
