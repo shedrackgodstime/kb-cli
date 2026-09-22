@@ -181,7 +181,12 @@ fn project_name_for(kb_root: &Path, path: &Path) -> Option<String> {
     if first != "projects" {
         return None;
     }
-    parts.next()?.as_os_str().to_str().map(|s| s.to_string())
+    let name = parts.next()?.as_os_str().to_str()?.to_string();
+    // A project is a directory: `projects/README.md` is a file, not a project.
+    if !kb_root.join("projects").join(&name).is_dir() {
+        return None;
+    }
+    Some(name)
 }
 
 /// Heuristic binary-content detection: significant NUL bytes.
@@ -394,5 +399,26 @@ mod tests {
 
         let hits = search(dir.path(), "zzz-not-present", &SearchOptions::default()).unwrap();
         assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn search_top_level_projects_file_is_not_a_project() {
+        let dir = TempDir::new().unwrap();
+        kb_structure(dir.path());
+        fs::write(
+            dir.path().join("projects").join("README.md"),
+            "needle listed here\n",
+        )
+        .unwrap();
+
+        let hits = search(dir.path(), "needle", &SearchOptions::default()).unwrap();
+        let top_level = hits
+            .iter()
+            .find(|h| h.path == "projects/README.md")
+            .expect("projects/README.md must be searched");
+        assert_eq!(
+            top_level.project, None,
+            "a file in projects/ is not a project"
+        );
     }
 }

@@ -1,8 +1,10 @@
+pub mod archive;
 pub mod config;
 pub mod discovery;
 pub mod doctor;
 pub mod git;
 pub mod log;
+pub mod open;
 pub mod paths;
 pub mod platform;
 pub mod project;

@@ -607,7 +607,9 @@ pub fn export_project(
         std::fs::create_dir_all(parent)?;
     }
 
-    // Create tarball
+    // Create the tarball with the project's top-level directory inside
+    // (i.e. `irosh/...`), so importers can auto-detect the name and extract
+    // contents under whatever `--name` they pick.
     let status = Command::new("tar")
         .arg("-czf")
         .arg(&dest)
@@ -657,20 +659,57 @@ pub fn import_project(
         );
     }
 
-    // Extract tarball with safety flags
+    // Extract into a temp dir so the project can be renamed independently of
+    // whatever top-level directory the archive was created with.
+    let staging = root.join("projects").join(format!(".import-{}", name));
+    if staging.exists() {
+        std::fs::remove_dir_all(&staging)?;
+    }
+    std::fs::create_dir_all(&staging)?;
+
+    // Security: don't follow symlinks outside the archive, don't restore owners.
     let status = Command::new("tar")
         .arg("-xzf")
         .arg(tarball)
         .arg("-C")
-        .arg(root.join("projects"))
-        // Security: don't follow symlinks outside the archive
+        .arg(&staging)
         .arg("--no-same-owner")
         .status()
         .context("failed to run tar")?;
 
     if !status.success() {
+        let _ = std::fs::remove_dir_all(&staging);
         anyhow::bail!("tar failed to extract archive");
     }
+
+    // Find the archive's single top-level directory (e.g. `irosh/`), if any.
+    let contents: Vec<_> = std::fs::read_dir(&staging)?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    let source_dir = if contents.len() == 1 {
+        if let Ok(ft) = contents[0].file_type() {
+            if ft.is_dir() {
+                contents[0].path()
+            } else {
+                staging.clone()
+            }
+        } else {
+            staging.clone()
+        }
+    } else {
+        staging.clone()
+    };
+
+    // Move everything into the final `projects/<name>` location.
+    std::fs::create_dir_all(&target_dir)?;
+    for entry in std::fs::read_dir(&source_dir)? {
+        let entry = entry?;
+        let dest = target_dir.join(entry.file_name());
+        std::fs::rename(entry.path(), &dest)?;
+    }
+
+    std::fs::remove_dir_all(&staging)?;
 
     Ok(name)
 }

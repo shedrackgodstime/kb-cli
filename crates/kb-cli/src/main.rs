@@ -54,6 +54,23 @@ enum Commands {
         project: String,
     },
 
+    /// Move a project's memory to archive/ (or restore it with --restore)
+    Archive {
+        /// Project name
+        project: String,
+
+        /// Restore an archived project's memory back to projects/
+        #[arg(long)]
+        restore: bool,
+    },
+
+    /// Open a project's KB directory (or the knowledge-base root) in your
+    /// editor or file manager
+    Open {
+        /// Project name (omit to open the knowledge-base root)
+        project: Option<String>,
+    },
+
     /// Overview of the knowledge-base on this machine
     Status {
         /// Show all projects, not just active ones
@@ -225,7 +242,7 @@ enum Commands {
     /// Show recent knowledge-base history from git
     Log {
         /// Number of commits to show
-        #[arg(long, short, default_value_t = 15)]
+        #[arg(short = 'n', long, default_value_t = 15)]
         limit: usize,
 
         /// Show per-file change statistics
@@ -311,6 +328,7 @@ enum Shell {
     Bash,
     Zsh,
     Fish,
+    #[value(name = "powershell", alias = "power-shell")]
     PowerShell,
     Elvish,
 }
@@ -325,6 +343,9 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Unlink { project } => {
             commands::unlink::run(cli.kb_root.as_deref(), &project, cli.json)
+        }
+        Commands::Archive { project, restore } => {
+            commands::archive::run(cli.kb_root.as_deref(), &project, restore, cli.json)
         }
         Commands::Status { all, refs } => {
             commands::status::run(cli.kb_root.as_deref(), all, refs, cli.json)
@@ -560,6 +581,9 @@ fn main() -> anyhow::Result<()> {
             dry_run,
             cli.json,
         ),
+        Commands::Open { project } => {
+            commands::open::run(cli.kb_root.as_deref(), project.as_deref(), cli.json)
+        }
         Commands::Rules {
             project,
             all,

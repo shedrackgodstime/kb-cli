@@ -27,6 +27,14 @@ fn fake_project_repo(dir: &Path, name: &str) -> PathBuf {
     repo
 }
 
+/// Helper: remove a (possibly broken) symlink cross-platform.
+fn remove_path(path: &Path) {
+    if path.symlink_metadata().is_ok() || path.exists() {
+        let _ = fs::remove_dir(path);
+        let _ = fs::remove_file(path);
+    }
+}
+
 /// Helper: run git in a directory.
 fn git(args: &[&str], cwd: &Path) -> std::process::Output {
     std::process::Command::new("git")
@@ -1019,7 +1027,7 @@ fn test_log_limit_restricts_count() {
 
     let out = kb_bin()
         .args(["--kb-root", kb.to_str().unwrap()])
-        .args(["log", "--limit", "2"])
+        .args(["log", "-n", "2"])
         .env("HOME", home_dir.path())
         .env("USERPROFILE", home_dir.path())
         .output()
@@ -1213,6 +1221,73 @@ fn test_subscribe_roundtrip() {
     assert!(!config.contains("alpha"), "config: {}", config);
     assert!(!kb.join("projects/alpha").exists());
     assert!(kb.join("projects/beta/HANDOFF.md").exists());
+}
+
+#[test]
+fn test_unsubscribe_last_subscription_restores_full_checkout() {
+    let dir = TempDir::new().unwrap();
+    // KB whose only top-level directory is `projects/`: a bare `kb init`
+    // layout. Unsubscribing the last project leaves an *empty* cone there
+    // (no always-on dirs), which used to hard-fail in sparse::set_cone.
+    let kb = dir.path().join("knowledge-base");
+    fs::create_dir_all(&kb).unwrap();
+    fs::write(kb.join("AGENTS.md"), "# Agent Rules\n").unwrap();
+    fs::write(kb.join("INDEX.md"), "# Index\n").unwrap();
+    fs::create_dir_all(kb.join("projects/alpha")).unwrap();
+    fs::write(kb.join("projects/alpha/HANDOFF.md"), "# alpha\n").unwrap();
+    fs::create_dir_all(kb.join("projects/beta")).unwrap();
+    fs::write(kb.join("projects/beta/HANDOFF.md"), "# beta\n").unwrap();
+    assert!(git(&["init", "-b", "main"], &kb).status.success());
+    assert!(git(&["config", "user.name", "Test"], &kb).status.success());
+    assert!(
+        git(&["config", "user.email", "test@example.com"], &kb)
+            .status
+            .success()
+    );
+    git_commit_all(&kb, "init");
+
+    let home_dir = TempDir::new().unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    // beta's memory is out of the cone now.
+    assert!(!kb.join("projects/beta/HANDOFF.md").exists());
+
+    // Unsubscribing the last subscription must revert to a full checkout
+    // (all memory materialized again) rather than erroring out.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["unsubscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "exit: {:?} stderr: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert!(kb.join("projects/alpha/HANDOFF.md").exists());
+    assert!(
+        kb.join("projects/beta/HANDOFF.md").exists(),
+        "full checkout must materialize all memory again"
+    );
+
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(
+        !config.contains("alpha") && !config.contains("beta"),
+        "no subscriptions should remain: {}",
+        config
+    );
 }
 
 #[test]
@@ -1434,4 +1509,557 @@ fn test_doctor_reports_sparse_drift() {
         .assert()
         .success();
     assert!(kb.join("projects/alpha/HANDOFF.md").exists());
+}
+
+/// Helper: write a tiny editor shim that records its directory argument to
+/// `log_file`, and return the `$EDITOR` value that runs it.
+fn editor_shim(dir: &Path, log_file: &Path) -> String {
+    #[cfg(windows)]
+    {
+        let hook = dir.join("open-hook.ps1");
+        fs::write(
+            &hook,
+            format!(
+                "\"$args[0]\" | Out-File -FilePath '{}' -Encoding ascii\n",
+                log_file.to_string_lossy()
+            ),
+        )
+        .unwrap();
+        format!("powershell -NoProfile -File {}", hook.to_string_lossy())
+    }
+    #[cfg(not(windows))]
+    {
+        let hook = dir.join("open-hook.sh");
+        fs::write(
+            &hook,
+            format!(
+                "#!/bin/sh\necho \"$1\" > \"{}\"\n",
+                log_file.to_string_lossy()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        hook.to_string_lossy().into_owned()
+    }
+}
+
+#[test]
+fn test_open_project_with_editor() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    let log_file = dir.path().join("open-log.txt");
+    let editor = editor_shim(dir.path(), &log_file);
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["open", "alpha"])
+        .env("EDITOR", &editor)
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Opened"));
+
+    let logged = fs::read_to_string(&log_file).unwrap();
+    assert!(
+        logged.contains("alpha"),
+        "editor must receive the project dir: {}",
+        logged
+    );
+}
+
+#[test]
+fn test_open_kb_root_without_project() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    let log_file = dir.path().join("open-log.txt");
+    let editor = editor_shim(dir.path(), &log_file);
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .arg("open")
+        .env("EDITOR", &editor)
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Opened"));
+
+    let logged = fs::read_to_string(&log_file).unwrap();
+    assert!(
+        logged.contains("knowledge-base"),
+        "editor must receive the KB root: {}",
+        logged
+    );
+}
+
+#[test]
+fn test_open_json_reports_path() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    let log_file = dir.path().join("open-log.txt");
+    let editor = editor_shim(dir.path(), &log_file);
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["open", "alpha", "--json"])
+        .env("EDITOR", &editor)
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "exit: {:?}", out.status.code());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"ok\": true"), "{}", stdout);
+    assert!(stdout.contains("alpha"), "{}", stdout);
+}
+
+#[test]
+fn test_open_unknown_project_errors() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["open", "nope"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no project memory"));
+}
+
+#[test]
+fn test_open_unsubscribed_project_hints_subscribe() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    // Subscribe to alpha only: beta exists in the repo but is not checked out.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+    assert!(!kb.join("projects/beta").exists());
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["open", "beta"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not checked out"));
+}
+
+#[test]
+fn test_done_commits_and_pushes_freshly_linked_memory() {
+    let dir = TempDir::new().unwrap();
+    let (kb, bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    // NOTE: no upstream is pushed beforehand — `kb done` must push its own
+    // branch (`-u origin HEAD`) even when origin/main has no tracking branch.
+
+    // Work on a project placed in the sandboxed home, on the real homepage
+    // layout (`~/Projects/<name>`) so `kb work` finds it by name.
+    let repo = home_dir.path().join("Projects").join("myapp");
+    fs::create_dir_all(&repo).unwrap();
+    fs::write(repo.join("src.ts"), "// project code\n").unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["work", "myapp"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    // Freshly-linked memory is entirely untracked: regression for the
+    // `?? projects/` collapse that made `kb done` report "No changes".
+    fs::write(
+        kb.join("projects/myapp/HANDOFF.md"),
+        "# myapp\n\nNewly linked memory.\n",
+    )
+    .unwrap();
+    fs::write(kb.join("INDEX.md"), "# Index updated\n").unwrap();
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["done", "-m", "sandbox: add myapp memory"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        out.status.success(),
+        "exit: {:?} stderr: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Done!"), "{}", stdout);
+    assert!(stdout.contains("myapp"), "{}", stdout);
+    assert!(stdout.contains("sandbox: add myapp memory"), "{}", stdout);
+
+    // The commit landed on the KB and was pushed to origin.
+    let head = git(&["log", "-1", "HEAD"], &kb);
+    assert!(
+        String::from_utf8_lossy(&head.stdout).contains("add myapp memory"),
+        "{}",
+        String::from_utf8_lossy(&head.stdout)
+    );
+    let origin = git(&["log", "-1", "HEAD"], &bare);
+    assert!(
+        String::from_utf8_lossy(&origin.stdout).contains("add myapp memory"),
+        "{}",
+        String::from_utf8_lossy(&origin.stdout)
+    );
+}
+
+#[test]
+fn test_export_import_round_trip_with_rename() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _) = setup_kb_git_repo(dir.path());
+
+    // Build a project with real memory on disk.
+    fs::create_dir_all(kb.join("projects/irosh/spec")).unwrap();
+    fs::write(kb.join("projects/irosh/HANDOFF.md"), "# irosh\n\nNotes.\n").unwrap();
+    fs::write(kb.join("projects/irosh/spec/01.md"), "spec\n").unwrap();
+
+    let tarball = dir.path().join("packed").join("irosh.tar.gz");
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "export", "irosh"])
+        .args(["--output", tarball.to_str().unwrap()])
+        .assert()
+        .success();
+
+    // Importing under a new name must place contents in `projects/reorg`.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "import"])
+        .arg(tarball.to_str().unwrap())
+        .args(["--name", "reorg"])
+        .assert()
+        .success();
+    assert!(kb.join("projects/reorg/HANDOFF.md").exists());
+    assert!(kb.join("projects/reorg/spec/01.md").exists());
+    assert_eq!(
+        fs::read_to_string(kb.join("projects/reorg/spec/01.md")).unwrap(),
+        "spec\n"
+    );
+
+    // The import name must not silently resolve back to the original.
+    assert!(!kb.join("projects/reorg/projects").exists());
+}
+
+#[test]
+fn test_archive_roundtrip_unlinks_and_restores() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let repo = fake_project_repo(dir.path(), "myapp");
+    let home_dir = TempDir::new().unwrap();
+
+    // Link so the project is wired (symlinks, active list, memory).
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["link", repo.to_str().unwrap()])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+    fs::write(kb.join("projects/myapp/HANDOFF.md"), "# myapp\n\nnotes\n").unwrap();
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    assert!(fs::read_to_string(&config_file).unwrap().contains("myapp"));
+
+    // Archive by name: memory leaves projects/, wiring is removed, active list drops.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "archive", "myapp"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Archived"));
+
+    assert!(
+        !kb.join("projects/myapp").exists(),
+        "memory must leave projects/"
+    );
+    assert!(kb.join("archive/myapp/HANDOFF.md").exists());
+    assert!(
+        !repo.join("scratch").symlink_metadata().is_ok(),
+        "scratch symlink must be removed"
+    );
+    assert!(!repo.join("kb-rules.md").exists());
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(
+        !config.contains("\"myapp\""),
+        "config must drop the archived project from active_projects: {}",
+        config
+    );
+
+    // Archived project vanishes from `kb status`.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "status"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("myapp"),
+        "archived project must not appear in status"
+    );
+
+    // Archiving it again while archived is refused with a restore hint.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "archive", "myapp"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("already archived"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Restore: memory comes back, active list is restored.
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["archive", "--restore", "myapp"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+    assert!(kb.join("projects/myapp/HANDOFF.md").exists());
+    assert!(!kb.join("archive/myapp").exists());
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(
+        config.contains("\"myapp\""),
+        "restore must re-add the project to active_projects: {}",
+        config
+    );
+
+    // Restored (formerly archived) memory is exportable again.
+    let tarball = dir.path().join("myapp.tar.gz");
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "export", "myapp"])
+        .args(["--output", tarball.to_str().unwrap()])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+    assert!(tarball.exists());
+}
+
+#[test]
+fn test_archive_missing_memory_errors() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "archive", "ghost"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no project memory for 'ghost'"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn test_doctor_fix_relinks_broken_symlinks() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let repo = fake_project_repo(dir.path(), "myapp");
+    let home_dir = TempDir::new().unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["link", repo.to_str().unwrap()])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+    assert!(
+        fs::symlink_metadata(repo.join("scratch"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+
+    // Simulate drifted wiring: both symlinks vanish.
+    remove_path(&repo.join("scratch"));
+    remove_path(&repo.join(".agent-rules"));
+    assert!(repo.join("scratch").symlink_metadata().is_err());
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "doctor", "--fix"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("re-linked myapp"));
+
+    assert!(
+        fs::symlink_metadata(repo.join("scratch"))
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "scratch symlink must be re-created"
+    );
+    assert!(
+        fs::symlink_metadata(repo.join(".agent-rules"))
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        ".agent-rules symlink must be re-created"
+    );
+
+    // Health check is clean again.
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "doctor"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("broken symlink"),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+#[test]
+fn test_doctor_fix_creates_missing_config() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    assert!(!home_dir.path().join(".kb").join("config.toml").exists());
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "doctor", "--fix"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    assert!(config_file.exists(), "doctor --fix must create the config");
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(
+        config.contains("knowledge-base"),
+        "config must reference the kb_root: {}",
+        config
+    );
+}
+
+#[test]
+fn test_doctor_fix_registers_orphaned_memory() {
+    let dir = TempDir::new().unwrap();
+    let kb = fake_kb_root(dir.path());
+    let home_dir = TempDir::new().unwrap();
+
+    // Memory on disk with no config entry (e.g. a manual import).
+    fs::create_dir_all(kb.join("projects/extra")).unwrap();
+    fs::write(kb.join("projects/extra/HANDOFF.md"), "# extra\n").unwrap();
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "doctor", "--fix"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added to active_projects: extra"));
+
+    let config_file = home_dir.path().join(".kb").join("config.toml");
+    let config = fs::read_to_string(&config_file).unwrap();
+    assert!(
+        config.contains("\"extra\""),
+        "orphaned memory must be registered: {}",
+        config
+    );
+}
+
+#[test]
+fn test_doctor_fix_rebuilds_sparse_cone() {
+    let dir = TempDir::new().unwrap();
+    let (kb, _bare) = setup_kb_git_repo(dir.path());
+    let home_dir = TempDir::new().unwrap();
+    seed_memory(&kb);
+
+    kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap()])
+        .args(["subscribe", "alpha"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .assert()
+        .success();
+
+    // External drift: beta materialized even though nothing subscribes to it.
+    assert!(
+        git(
+            &[
+                "sparse-checkout",
+                "set",
+                "agent-rules",
+                "projects/alpha",
+                "projects/beta"
+            ],
+            &kb,
+        )
+        .status
+        .success()
+    );
+    assert!(kb.join("projects/beta").exists());
+
+    let out = kb_bin()
+        .args(["--kb-root", kb.to_str().unwrap(), "doctor", "--fix"])
+        .env("HOME", home_dir.path())
+        .env("USERPROFILE", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("rebuilt cone"), "{}", stdout);
+
+    // Cone re-converged to the subscription: beta is pruned, alpha kept.
+    assert!(
+        !kb.join("projects/beta").exists(),
+        "unsubscribed memory must be removed from the cone"
+    );
+    assert!(kb.join("projects/alpha").exists());
 }

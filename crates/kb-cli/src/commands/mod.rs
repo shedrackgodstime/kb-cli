@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod clone_refs;
 pub mod config;
 pub mod doctor;
@@ -8,6 +9,7 @@ pub mod import;
 pub mod init;
 pub mod link;
 pub mod log;
+pub mod open;
 pub mod projects;
 pub mod pull;
 pub mod push;

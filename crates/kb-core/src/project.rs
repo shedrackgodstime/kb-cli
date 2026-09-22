@@ -489,7 +489,9 @@ fn render_path(path: &Path) -> String {
 /// Ensure ~/.gitignore has entries for knowledge-base symlinks.
 ///
 /// This is global, personal config — never touches the project's .gitignore.
-fn ensure_global_gitignore() -> Result<bool> {
+/// Ensure `~/.gitignore` contains the kb symlink/rules entries (global,
+/// personal). Returns true if the file was created or appended to.
+pub fn ensure_global_gitignore() -> Result<bool> {
     let home = paths::home_dir()?;
     let gitignore = home.join(".gitignore");
 

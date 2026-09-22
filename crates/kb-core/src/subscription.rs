@@ -92,8 +92,16 @@ fn apply(
     let conversion = !was_sparse && !is_noop;
 
     if !is_noop && !dry_run {
-        let cone = sparse::cone(&root, &subscribed)?;
-        sparse::set_cone(&root, &cone)?;
+        if !add && subscribed.is_empty() {
+            // Last subscription removed: go back to a full checkout. This is
+            // the inverse of enabling sparse-checkout on the first subscribe;
+            // rebuilding an empty cone (which git/sparse refuse) would strand
+            // this device without project memory on disk.
+            sparse::disable(&root)?;
+        } else {
+            let cone = sparse::cone(&root, &subscribed)?;
+            sparse::set_cone(&root, &cone)?;
+        }
         config::save(&config)?;
     }
 

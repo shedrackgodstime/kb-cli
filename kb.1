@@ -1,0 +1,111 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH kb 1  "kb 0.5.0" 
+.SH NAME
+kb \- Cross\-platform CLI for managing the knowledge\-base ecosystem
+.SH SYNOPSIS
+\fBkb\fR [\fB\-\-kb\-root\fR] [\fB\-\-json\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Cross\-platform CLI for managing the knowledge\-base ecosystem
+.SH OPTIONS
+.TP
+\fB\-\-kb\-root\fR \fI<KB_ROOT>\fR
+Override knowledge\-base root discovery
+.TP
+\fB\-\-json\fR
+Output machine\-readable JSON
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Verbose output
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Quiet output — suppress informational messages
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.SH SUBCOMMANDS
+.TP
+kb\-init(1)
+One\-time setup on a new machine
+.TP
+kb\-link(1)
+Wire a project repository to the knowledge\-base
+.TP
+kb\-unlink(1)
+Remove symlinks for a project (keeps memory)
+.TP
+kb\-archive(1)
+Move a project\*(Aqs memory to archive/ (or restore it with \-\-restore)
+.TP
+kb\-open(1)
+Open a project\*(Aqs KB directory (or the knowledge\-base root) in your editor or file manager
+.TP
+kb\-status(1)
+Overview of the knowledge\-base on this machine
+.TP
+kb\-doctor(1)
+Health check across the knowledge\-base
+.TP
+kb\-projects(1)
+List all projects in the knowledge\-base
+.TP
+kb\-clone\-refs(1)
+Clone missing reference repos from ref/README.md
+.TP
+kb\-sync(1)
+Sync with remote: git pull \-\-rebase + re\-link
+.TP
+kb\-global\-sync(1)
+Bidirectional sync of the whole KB: pull if safe, then push everything
+.TP
+kb\-pull(1)
+Pull knowledge\-base updates (fast\-forward only)
+.TP
+kb\-push(1)
+Push changes for specific projects to remote
+.TP
+kb\-export(1)
+Export project memory to a portable tarball
+.TP
+kb\-import(1)
+Import project memory from a tarball
+.TP
+kb\-completions(1)
+Generate shell completions
+.TP
+kb\-man(1)
+Generate man page
+.TP
+kb\-work(1)
+Start working on a project (sync + link + track)
+.TP
+kb\-done(1)
+Finish working: commit + push tracked projects
+.TP
+kb\-search(1)
+Search memory files across the knowledge\-base
+.TP
+kb\-log(1)
+Show recent knowledge\-base history from git
+.TP
+kb\-rules(1)
+Ensure the personal kb\-rules.md map for a project
+.TP
+kb\-subscribe(1)
+Subscribe this device to a project\*(Aqs memory (selective sync)
+.TP
+kb\-unsubscribe(1)
+Stop receiving a project\*(Aqs memory on this device
+.TP
+kb\-config(1)
+Inspect and edit machine\-local configuration
+.TP
+kb\-help(1)
+Print this message or the help of the given subcommand(s)
+.SH EXTRA
+Run `kb <command> \-\-help` for more information on a command.
+.SH VERSION
+v0.5.0

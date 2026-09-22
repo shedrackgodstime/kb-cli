@@ -31,11 +31,13 @@ pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool) -> Result<
         return Ok(());
     }
 
-    // 2. Check what's changed
+    // 2. Check what's changed. `--untracked-files=all` is required so
+    //    newly-created project memory is listed file-by-file instead of being
+    //    collapsed to a single `?? projects/` entry.
     let status_output = Command::new("git")
         .arg("-C")
         .arg(&root)
-        .args(["status", "--porcelain"])
+        .args(["status", "--porcelain", "--untracked-files=all"])
         .output()
         .context("failed to git status")?;
 
@@ -122,11 +124,13 @@ pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool) -> Result<
         anyhow::bail!("git commit failed: {}", stderr);
     }
 
-    // 6. Push
+    // 6. Push. `-u origin HEAD` also works when the KB branch has no
+    //    upstream yet (e.g. right after `kb init` on a machine), instead of
+    //    failing with "no upstream branch" and leaving the commit un-pushed.
     let push_output = Command::new("git")
         .arg("-C")
         .arg(&root)
-        .args(["push"])
+        .args(["push", "-u", "origin", "HEAD"])
         .output()
         .context("failed to git push")?;
 

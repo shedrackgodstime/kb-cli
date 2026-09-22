@@ -2,9 +2,10 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
-use crate::config;
+use crate::config::{self, Config};
 use crate::paths;
 use crate::platform;
+use crate::project;
 use crate::sparse;
 
 /// Health check severity.
@@ -30,6 +31,14 @@ pub struct DoctorReport {
     pub checks: Vec<Check>,
 }
 
+/// Outcome of attempting to repair one check with `--fix`.
+#[derive(Debug)]
+pub struct Fix {
+    pub name: &'static str,
+    pub action: String,
+    pub ok: bool,
+}
+
 /// Run all health checks against the knowledge-base.
 pub fn run_all(kb_root: &Path) -> Result<DoctorReport> {
     let checks = vec![
@@ -42,6 +51,323 @@ pub fn run_all(kb_root: &Path) -> Result<DoctorReport> {
     ];
 
     Ok(DoctorReport { checks })
+}
+
+/// Repair every auto-fixable check, in dependency order.
+///
+/// Sparse reconciliation runs before the orphaned check so that cone-drift
+/// residue (a `projects/<name>` dir materialized by a stale cone, then pruned
+/// when the cone is rebuilt) is never mistaken for a real orphaned memory and
+/// re-registered as active.
+///
+/// Advisory checks (stale handoffs) are intentionally left alone: writing
+/// memory content is never something doctor should do. Returns the list of
+/// attempted repairs so the CLI can report what changed.
+pub fn fix_all(kb_root: &Path) -> Result<Vec<Fix>> {
+    let fixes = vec![
+        fix_config(kb_root),
+        fix_symlinks(kb_root),
+        fix_gitignore_global(),
+        fix_sparse(kb_root),
+        fix_orphaned_projects(kb_root),
+    ];
+
+    Ok(fixes)
+}
+
+fn noop(name: &'static str, note: impl Into<String>) -> Fix {
+    Fix {
+        name,
+        action: format!("nothing to fix ({})", note.into()),
+        ok: true,
+    }
+}
+
+fn ok_fix(name: &'static str, action: String) -> Fix {
+    Fix {
+        name,
+        action,
+        ok: true,
+    }
+}
+
+fn err_fix(name: &'static str, err: impl std::fmt::Display) -> Fix {
+    Fix {
+        name,
+        action: format!("not fixed: {err}"),
+        ok: false,
+    }
+}
+
+/// Point the config at the discovered kb_root (missing or broken config).
+fn fix_config(kb_root: &Path) -> Fix {
+    match config::load() {
+        Ok(cfg) if cfg.kb_root.as_deref() == Some(kb_root) && kb_root.exists() => {
+            noop("config", "already valid")
+        }
+        Ok(cfg) if cfg.kb_root.as_deref() == Some(kb_root) => {
+            // Config points here but the directory is missing — no config
+            // rewrite can recreate the knowledge-base itself.
+            err_fix(
+                "config",
+                format!("kb_root directory missing: {}", kb_root.display()),
+            )
+        }
+        Ok(_) => match config::update(|c| c.kb_root = Some(kb_root.to_path_buf())) {
+            Ok(_) => ok_fix(
+                "config",
+                format!("set kb_root to {}", paths::normalize_display(kb_root)),
+            ),
+            Err(e) => err_fix("config", e),
+        },
+        Err(_) => {
+            // Unparseable (or unreadable) config: back it up, then rewrite it
+            // pointing at the discovered kb_root. The backup lets the user
+            // recover anything `config::save` does not carry over.
+            let path = config::config_path().unwrap_or_default();
+            let backup = path.with_extension("toml.bak");
+            if path.exists() {
+                let _ = fs::copy(&path, &backup);
+            }
+            let fresh = Config {
+                kb_root: Some(kb_root.to_path_buf()),
+                ..Config::default()
+            };
+            match config::save(&fresh) {
+                Ok(_) => ok_fix(
+                    "config",
+                    format!("rewrote unreadable config; backup at {}", backup.display()),
+                ),
+                Err(e2) => err_fix("config", e2),
+            }
+        }
+    }
+}
+
+/// Re-link every active project whose symlinks are missing or wrong.
+///
+/// `project::link` is idempotent and `platform::create_symlink` replaces an
+/// existing (even dangling) symlink, so re-linking is safe.
+fn fix_symlinks(kb_root: &Path) -> Fix {
+    let cfg = match config::load() {
+        Ok(c) => c,
+        Err(e) => return err_fix("symlinks", e),
+    };
+    let templates = kb_root.join("templates");
+    let rules_target = kb_root.join("agent-rules");
+
+    let mut fixed = vec![];
+    let mut skipped = vec![];
+
+    for name in &cfg.active_projects {
+        let repo_path = cfg
+            .projects
+            .get(name)
+            .and_then(|p| p.repo_path.clone())
+            .unwrap_or_else(|| paths::default_project_dir(name).unwrap_or_default());
+        if !repo_path.is_dir() {
+            skipped.push(format!("{name} (repo not on this machine)"));
+            continue;
+        }
+        let memory = kb_root.join("projects").join(name);
+        let scratch_ok = platform::is_symlink_to(&repo_path.join("scratch"), &memory);
+        let rules_ok = platform::is_symlink_to(&repo_path.join(".agent-rules"), &rules_target);
+        if scratch_ok && rules_ok {
+            continue;
+        }
+        match project::link(kb_root, name, &repo_path, &templates) {
+            Ok(_) => fixed.push(name.clone()),
+            Err(e) => skipped.push(format!("{name} ({e})")),
+        }
+    }
+
+    if fixed.is_empty() && skipped.is_empty() {
+        return noop("symlinks", "all active projects healthy");
+    }
+    let mut parts = vec![];
+    if !fixed.is_empty() {
+        parts.push(format!("re-linked {}", fixed.join(", ")));
+    }
+    if !skipped.is_empty() {
+        parts.push(format!("skipped {}", skipped.join(", ")));
+    }
+    Fix {
+        name: "symlinks",
+        action: parts.join("; "),
+        ok: !fixed.is_empty() || skipped.is_empty(),
+    }
+}
+
+/// Ensure `~/.gitignore` has the kb entries AND git points `core.excludesFile`
+/// at it. Respects an already-configured excludesFile (never overrides it).
+fn fix_gitignore_global() -> Fix {
+    let home = match paths::home_dir() {
+        Ok(h) => h,
+        Err(e) => return err_fix("gitignore_global", e),
+    };
+    let gitignore = home.join(".gitignore");
+
+    let file_updated = match project::ensure_global_gitignore() {
+        Ok(u) => u,
+        Err(e) => return err_fix("gitignore_global", e),
+    };
+
+    if global_excludes_configured() {
+        return ok_fix(
+            "gitignore_global",
+            if file_updated {
+                "refreshed ~/.gitignore with kb entries".to_string()
+            } else {
+                "already configured".to_string()
+            },
+        );
+    }
+
+    let output = std::process::Command::new("git")
+        .args([
+            "config",
+            "--global",
+            "core.excludesFile",
+            gitignore.to_str().unwrap_or_default(),
+        ])
+        .output();
+    match output {
+        Ok(o) if o.status.success() => ok_fix(
+            "gitignore_global",
+            format!("set core.excludesFile -> {}", gitignore.display()),
+        ),
+        Ok(o) => err_fix(
+            "gitignore_global",
+            String::from_utf8_lossy(&o.stderr).trim(),
+        ),
+        Err(e) => err_fix("gitignore_global", e),
+    }
+}
+
+fn global_excludes_configured() -> bool {
+    std::process::Command::new("git")
+        .args(["config", "--global", "core.excludesFile"])
+        .output()
+        .map(|o| {
+            let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            !val.is_empty()
+        })
+        .unwrap_or(false)
+}
+
+/// Register project memories that exist on disk but aren't active. The other
+/// half of the hint (remove the directory) is destructive, so doctor never
+/// does that automatically.
+fn fix_orphaned_projects(kb_root: &Path) -> Fix {
+    let cfg = match config::load() {
+        Ok(c) => c,
+        Err(e) => return err_fix("orphaned", e),
+    };
+    let projects_dir = kb_root.join("projects");
+    if !projects_dir.exists() {
+        return noop("orphaned", "no projects directory");
+    }
+
+    let mut added = vec![];
+    let mut problems = vec![];
+    if let Ok(entries) = fs::read_dir(&projects_dir) {
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            // Skip the doc index and import staging dirs (`.import-*`).
+            if name == "README.md" || name.starts_with('.') {
+                continue;
+            }
+            if cfg.active_projects.contains(&name) {
+                continue;
+            }
+            match config::update(|c| config::ensure_active_project(c, &name)) {
+                Ok(_) => added.push(name),
+                Err(e) => problems.push(format!("{name} ({e})")),
+            }
+        }
+    }
+
+    if added.is_empty() && problems.is_empty() {
+        return noop("orphaned", "no orphaned project memories");
+    }
+    let mut parts = vec![];
+    if !added.is_empty() {
+        parts.push(format!("added to active_projects: {}", added.join(", ")));
+    }
+    if !problems.is_empty() {
+        parts.push(format!("problem {}", problems.join(", ")));
+    }
+    Fix {
+        name: "orphaned",
+        action: parts.join("; "),
+        ok: problems.is_empty(),
+    }
+}
+
+/// Reconcile the sparse-checkout cone with `active_projects` (the source of
+/// truth): rebuild the cone to exactly the configured subscriptions, or
+/// disable sparse-checkout entirely when nothing is subscribed.
+fn fix_sparse(kb_root: &Path) -> Fix {
+    let enabled = match sparse::enabled(kb_root) {
+        Ok(e) => e,
+        Err(_) => return noop("sparse", "kb is not a git worktree"),
+    };
+    if !enabled {
+        return noop("sparse", "full checkout");
+    }
+
+    let cfg = match config::load() {
+        Ok(c) => c,
+        Err(e) => return err_fix("sparse", e),
+    };
+    let configured = cfg.active_projects;
+    let materialized = sparse::subscribed_projects(kb_root).unwrap_or_default();
+
+    let missing: Vec<String> = configured
+        .iter()
+        .filter(|p| !materialized.contains(p))
+        .cloned()
+        .collect();
+    let extra: Vec<String> = materialized
+        .iter()
+        .filter(|p| !configured.contains(p))
+        .cloned()
+        .collect();
+
+    if missing.is_empty() && extra.is_empty() {
+        return noop(
+            "sparse",
+            format!(
+                "cone matches subscriptions ({} project(s))",
+                configured.len()
+            ),
+        );
+    }
+
+    let mut detail = vec![];
+    if !missing.is_empty() {
+        detail.push(format!("missing: {}", missing.join(", ")));
+    }
+    if !extra.is_empty() {
+        detail.push(format!("extra: {}", extra.join(", ")));
+    }
+
+    let result = if configured.is_empty() {
+        sparse::disable(kb_root)
+            .map(|_| "disabled sparse-checkout (restored full checkout)".to_string())
+    } else {
+        sparse::cone(kb_root, &configured)
+            .and_then(|cone| sparse::set_cone(kb_root, &cone))
+            .map(|_| format!("rebuilt cone for {} subscription(s)", configured.len()))
+    };
+
+    match result {
+        Ok(action) => ok_fix("sparse", format!("{} ({})", action, detail.join("; "))),
+        Err(e) => err_fix("sparse", e),
+    }
 }
 
 /// Check that config is valid and kb_root exists.

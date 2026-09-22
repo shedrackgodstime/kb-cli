@@ -57,6 +57,20 @@ pub fn set_cone(root: &Path, cone: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Disable sparse-checkout, materializing the whole knowledge-base again.
+/// This is the natural inverse of enabling it on the first subscribe, and is
+/// used when the last subscription is removed.
+pub fn disable(root: &Path) -> Result<()> {
+    let output = git::run(root, ["sparse-checkout", "disable"])?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git sparse-checkout disable failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// Build the desired cone: the always-on top-level directories plus one
 /// `projects/<name>/` per subscription. Deterministic — always-on dirs first,
 /// then config order.
