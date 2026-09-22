@@ -61,9 +61,16 @@ kb done
 | `kb sync` | Sync with remote (pull --rebase) |
 | `kb pull` | Pull updates (fast-forward only) |
 | `kb push --project X` | Push changes for specific projects |
+| `kb global-sync` | Bidirectional sync: pull if safe, push everything |
 | `kb clone-refs` | Clone reference repos |
 | `kb export` | Export project memory to tarball |
 | `kb import` | Import project memory from tarball |
+| `kb search <query>` | Search memory files across the KB |
+| `kb rules [project]` | Regenerate the personal `kb-rules.md` map |
+| `kb config list\|get\|set\|unset` | Inspect/edit `~/.kb/config.toml` |
+| `kb log` | Recent KB history from git (path-filtered) |
+| `kb subscribe <project>` | Selective sync: keep only this project's memory |
+| `kb unsubscribe <project>` | Stop keeping a project's memory |
 | `kb completions` | Generate shell completions |
 | `kb man` | Generate man page |
 
