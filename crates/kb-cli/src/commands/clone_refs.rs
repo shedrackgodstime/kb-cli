@@ -13,7 +13,7 @@ pub fn run(
     dry_run: bool,
     force: bool,
     json: bool,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<()> {
     // --full wins over --shallow; default is full clone (shallow=false)
     let do_shallow = shallow && !full;

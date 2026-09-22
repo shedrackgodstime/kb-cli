@@ -9,7 +9,7 @@ pub fn run(
     tarball: &Path,
     name: Option<&str>,
     json: bool,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<()> {
     let imported_name = sync::import_project(kb_root, tarball, name)?;
 

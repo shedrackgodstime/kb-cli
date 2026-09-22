@@ -3,14 +3,14 @@ use colored::Colorize;
 use std::path::Path;
 
 use super::resolve_project;
-use kb_core::{discovery, paths, project};
+use kb_core::{discovery, project};
 
 pub fn run(
     kb_root: Option<&Path>,
     project_input: &str,
     keep_gitignore: bool,
     json: bool,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 

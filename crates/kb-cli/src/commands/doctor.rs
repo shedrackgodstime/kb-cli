@@ -4,7 +4,7 @@ use std::path::Path;
 
 use kb_core::{discovery, doctor};
 
-pub fn run(kb_root: Option<&Path>, fix: bool, json: bool, quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, fix: bool, json: bool, _quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     let before = doctor::run_all(&root)?;

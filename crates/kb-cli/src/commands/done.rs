@@ -5,7 +5,7 @@ use std::process::Command;
 
 use kb_core::{discovery, state};
 
-pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, _quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     // 1. Load in-progress projects

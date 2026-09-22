@@ -10,7 +10,7 @@ pub fn run(
     active_only: bool,
     verbose: bool,
     json: bool,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let cfg = config::load()?;

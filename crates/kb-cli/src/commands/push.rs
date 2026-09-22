@@ -9,7 +9,7 @@ pub fn run(
     projects: &[String],
     message: Option<&str>,
     json: bool,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<()> {
     if projects.is_empty() {
         anyhow::bail!(

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use kb_core::sync;
 
-pub fn run(kb_root: Option<&Path>, projects: &[String], json: bool, quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, projects: &[String], json: bool, _quiet: bool) -> Result<()> {
     let result = sync::sync(kb_root, projects)?;
 
     if json {

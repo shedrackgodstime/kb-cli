@@ -9,13 +9,13 @@ pub fn subscribe(
     project: &str,
     dry_run: bool,
     json: bool,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<()> {
     render(
         subscription::subscribe(kb_root, project, dry_run)?,
         "Subscribed to",
         json,
-        quiet,
+        _quiet,
     )
 }
 
@@ -24,17 +24,17 @@ pub fn unsubscribe(
     project: &str,
     dry_run: bool,
     json: bool,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<()> {
     render(
         subscription::unsubscribe(kb_root, project, dry_run)?,
         "Unsubscribed from",
         json,
-        quiet,
+        _quiet,
     )
 }
 
-fn render(result: SubscriptionResult, heading: &str, json: bool, quiet: bool) -> Result<()> {
+fn render(result: SubscriptionResult, heading: &str, json: bool, _quiet: bool) -> Result<()> {
     if json {
         return print_json(&result);
     }

@@ -10,7 +10,7 @@ pub fn run(
     link: bool,
     dry_run: bool,
     json: bool,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<()> {
     let result = sync::global_sync(kb_root, message, link, dry_run)?;
 

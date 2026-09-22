@@ -4,7 +4,7 @@ use std::path::Path;
 
 use kb_core::{config, discovery, platform, project, refs};
 
-pub fn run(kb_root: Option<&Path>, all: bool, refs: bool, json: bool, quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, all: bool, refs: bool, json: bool, _quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let cfg = config::load()?;
     let platform_info = platform::detect_platform();

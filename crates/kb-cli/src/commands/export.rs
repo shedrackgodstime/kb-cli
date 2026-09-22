@@ -9,7 +9,7 @@ pub fn run(
     project: &str,
     output: Option<&Path>,
     json: bool,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<()> {
     let dest = sync::export_project(kb_root, project, output)?;
 

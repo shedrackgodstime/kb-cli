@@ -3,19 +3,19 @@ use colored::Colorize;
 
 use kb_core::config::{self as core_config, ConfigKey, ConfigValue};
 
-pub fn run_list(json: bool, quiet: bool) -> Result<()> {
+pub fn run_list(json: bool, _quiet: bool) -> Result<()> {
     list(json)
 }
 
-pub fn run_get(json: bool, key: &str, quiet: bool) -> Result<()> {
+pub fn run_get(json: bool, key: &str, _quiet: bool) -> Result<()> {
     get(key, json)
 }
 
-pub fn run_set(json: bool, key: &str, value: &str, quiet: bool) -> Result<()> {
+pub fn run_set(json: bool, key: &str, value: &str, _quiet: bool) -> Result<()> {
     set(key, value, json)
 }
 
-pub fn run_unset(json: bool, key: &str, quiet: bool) -> Result<()> {
+pub fn run_unset(json: bool, key: &str, _quiet: bool) -> Result<()> {
     unset(key, json)
 }
 
