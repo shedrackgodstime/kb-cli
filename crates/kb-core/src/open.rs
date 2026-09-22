@@ -163,10 +163,16 @@ mod tests {
         assert!(resolve_dir(Some(kb.path()), Some("..")).is_err());
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     #[test]
-    fn unix_default_launcher_is_xdg_open() {
+    fn linux_default_launcher_is_xdg_open() {
         assert_eq!(default_launcher(), "xdg-open");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_default_launcher_is_open() {
+        assert_eq!(default_launcher(), "open");
     }
 
     #[cfg(windows)]
