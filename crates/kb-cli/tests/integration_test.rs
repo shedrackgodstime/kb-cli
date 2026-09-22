@@ -197,7 +197,13 @@ fn test_link_and_status() {
     let kb_rules = fs::read_to_string(repo.join("kb-rules.md")).unwrap();
     assert!(kb_rules.contains("kb-rules.md"));
     assert!(kb_rules.contains("scratch/HANDOFF.md"));
-    let repo_display = repo.to_string_lossy().replace('\\', "/");
+    // Map now stores the canonical repo dir (Windows \\?\ prefix, macOS symlink resolution).
+    let canonical_repo = repo.canonicalize().unwrap();
+    let repo_display = canonical_repo.to_string_lossy().replace('\\', "/");
+    let repo_display = repo_display
+        .strip_prefix("//?/")
+        .unwrap_or(&repo_display)
+        .to_string();
     assert!(kb_rules.contains(&repo_display));
 
     // Verify project .gitignore was NOT modified
