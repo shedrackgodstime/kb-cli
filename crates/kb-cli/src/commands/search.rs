@@ -4,6 +4,7 @@ use std::path::Path;
 
 use kb_core::{discovery, search};
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     kb_root: Option<&Path>,
     query: &str,

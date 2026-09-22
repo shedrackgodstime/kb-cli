@@ -4,6 +4,7 @@ use std::path::Path;
 
 use kb_core::{config, discovery, refs};
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     kb_root: Option<&Path>,
     project: Option<&str>,
