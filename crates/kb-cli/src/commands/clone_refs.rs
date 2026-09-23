@@ -14,7 +14,7 @@ pub fn run(
     dry_run: bool,
     force: bool,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     // --full wins over --shallow; default is full clone (shallow=false)
     let do_shallow = shallow && !full;
@@ -42,7 +42,7 @@ pub fn run(
                 "{}",
                 serde_json::json!({"ok": true, "data": {"projects": []}})
             );
-        } else {
+        } else if !quiet {
             println!();
             println!("  {}", "No active projects to process.".dimmed());
             println!();
@@ -60,7 +60,7 @@ pub fn run(
             .join("README.md");
 
         if !ref_readme.exists() {
-            if !json {
+            if !json && !quiet {
                 println!();
                 println!(
                     "  {} {} — no ref/README.md found",
@@ -79,14 +79,14 @@ pub fn run(
         let mut total_errors = vec![];
         let mut ref_outputs = vec![];
 
-        if !json {
+        if !json && !quiet {
             println!();
             println!("  {} {}", "Refs for".bold().cyan(), project_name.bold());
             println!();
         }
 
         if statuses.is_empty() {
-            if !json {
+            if !json && !quiet {
                 println!("  {}", "No registered references.".dimmed());
             }
             continue;
@@ -111,7 +111,7 @@ pub fn run(
             match &status.status {
                 refs::RefStatusKind::Missing => {
                     if dry_run {
-                        if !json {
+                        if !json && !quiet {
                             println!(
                                 "  {} {} {}",
                                 "?".yellow().bold(),
@@ -126,7 +126,9 @@ pub fn run(
                             Err(e) => total_errors.push(format!("{}: {}", status.entry.name, e)),
                         }
                     } else {
-                        print!("  {} {} ", "→".cyan(), status.entry.name.bold());
+                        if !quiet {
+                            print!("  {} {} ", "→".cyan(), status.entry.name.bold());
+                        }
                         match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
                             Ok(()) => {
                                 println!("{}", "cloned".green());
@@ -141,7 +143,7 @@ pub fn run(
                     }
                 }
                 refs::RefStatusKind::UpToDate => {
-                    if !json {
+                    if !json && !quiet {
                         println!(
                             "  {} {} {}",
                             "⊗".dimmed(),
@@ -154,7 +156,7 @@ pub fn run(
                 refs::RefStatusKind::Mismatch { expected, actual } => {
                     if force {
                         if dry_run {
-                            if !json {
+                            if !json && !quiet {
                                 println!(
                                     "  {} {} {}",
                                     "!".yellow().bold(),
@@ -171,7 +173,9 @@ pub fn run(
                                 }
                             }
                         } else {
-                            print!("  {} {} ", "!".yellow().bold(), status.entry.name.bold());
+                            if !quiet {
+                                print!("  {} {} ", "!".yellow().bold(), status.entry.name.bold());
+                            }
                             match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
                                 Ok(()) => {
                                     println!("{}", "re-cloned".green());
@@ -186,7 +190,7 @@ pub fn run(
                                 }
                             }
                         }
-                    } else if !json {
+                    } else if !json && !quiet {
                         println!(
                             "  {} {} {}",
                             "!".yellow().bold(),
@@ -197,7 +201,7 @@ pub fn run(
                     total_mismatch += 1;
                 }
                 refs::RefStatusKind::Unknown => {
-                    if !json {
+                    if !json && !quiet {
                         println!(
                             "  {} {} {}",
                             "?".dimmed(),
@@ -221,7 +225,7 @@ pub fn run(
         }));
 
         // Text summary for non-json
-        if !json {
+        if !json && !quiet {
             let parts = vec![
                 if total_cloned > 0 {
                     Some(format!("{} cloned", total_cloned).green().to_string())

@@ -13,7 +13,7 @@ pub fn run(
     files_only: bool,
     case_sensitive: bool,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<bool> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
@@ -54,38 +54,42 @@ pub fn run(
     }
 
     if !found {
-        println!();
-        println!(
-            "  {} {} {}",
-            "No matches for".dimmed(),
-            format!("'{}'", query).bold(),
-            format!("in {}.", kb_core::paths::normalize_display(&root)).dimmed()
-        );
-        println!();
+        if !quiet {
+            println!();
+            println!(
+                "  {} {} {}",
+                "No matches for".dimmed(),
+                format!("'{}'", query).bold(),
+                format!("in {}.", kb_core::paths::normalize_display(&root)).dimmed()
+            );
+            println!();
+        }
         return Ok(false);
     }
 
-    println!();
-    if files_only {
-        let mut seen = std::collections::HashSet::new();
-        for h in &hits {
-            if seen.insert(h.path.clone()) {
-                println!("  {}", h.path.bold());
+    if !quiet {
+        println!();
+        if files_only {
+            let mut seen = std::collections::HashSet::new();
+            for h in &hits {
+                if seen.insert(h.path.clone()) {
+                    println!("  {}", h.path.bold());
+                }
+            }
+        } else {
+            for h in &hits {
+                let line = h.line.to_string().yellow().bold();
+                let text = h.text.trim_end();
+                println!("  {}:{}: {}", h.path.bold(), line, text);
             }
         }
-    } else {
-        for h in &hits {
-            let line = h.line.to_string().yellow().bold();
-            let text = h.text.trim_end();
-            println!("  {}:{}: {}", h.path.bold(), line, text);
-        }
-    }
-    println!();
+        println!();
 
-    if hits.len() == 1 {
-        println!("  {} match\n", 1.to_string().cyan());
-    } else {
-        println!("  {} matches\n", hits.len().to_string().cyan());
+        if hits.len() == 1 {
+            println!("  {} match\n", 1.to_string().cyan());
+        } else {
+            println!("  {} matches\n", hits.len().to_string().cyan());
+        }
     }
 
     Ok(true)

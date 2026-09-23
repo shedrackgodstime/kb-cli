@@ -10,7 +10,7 @@ pub fn run(
     link: bool,
     no_link: bool,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     let do_link = link || !no_link; // default: re-link unless --no-link
 
@@ -28,7 +28,7 @@ pub fn run(
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {}", "Pulling knowledge-base...".bold().cyan());
         println!();

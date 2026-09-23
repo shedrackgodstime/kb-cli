@@ -4,7 +4,7 @@ use std::path::Path;
 
 use kb_core::{open, paths};
 
-pub fn run(kb_root: Option<&Path>, project: Option<&str>, json: bool, _quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, project: Option<&str>, json: bool, quiet: bool) -> Result<()> {
     let dir = open::open(kb_root, project)?;
     let display = paths::normalize_display(&dir);
 
@@ -21,6 +21,8 @@ pub fn run(kb_root: Option<&Path>, project: Option<&str>, json: bool, _quiet: bo
         return Ok(());
     }
 
-    println!("  {}", format!("Opened {display}").dimmed());
+    if !quiet {
+        println!("  {}", format!("Opened {display}").dimmed());
+    }
     Ok(())
 }

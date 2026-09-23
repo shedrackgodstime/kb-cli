@@ -9,13 +9,13 @@ pub fn subscribe(
     project: &str,
     dry_run: bool,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     render(
         subscription::subscribe(kb_root, project, dry_run)?,
         "Subscribed to",
         json,
-        _quiet,
+        quiet,
     )
 }
 
@@ -24,52 +24,52 @@ pub fn unsubscribe(
     project: &str,
     dry_run: bool,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     render(
         subscription::unsubscribe(kb_root, project, dry_run)?,
         "Unsubscribed from",
         json,
-        _quiet,
+        quiet,
     )
 }
 
-fn render(result: SubscriptionResult, heading: &str, json: bool, _quiet: bool) -> Result<()> {
+fn render(result: SubscriptionResult, heading: &str, json: bool, quiet: bool) -> Result<()> {
     if json {
         return print_json(&result);
     }
 
-    println!();
-    println!("  {} {}", heading.dimmed(), result.project.bold());
+    if !quiet {
+        println!();
+        println!("  {} {}", heading.dimmed(), result.project.bold());
 
-    if result.dry_run {
-        println!("  {}", "(dry run) nothing changed".dimmed());
-    } else if result.conversion {
-        println!(
-            "  {}",
-            "Sparse-checkout enabled: this device now keeps only subscribed projects.".dimmed()
-        );
-    }
+        if result.dry_run {
+            println!("  {}", "(dry run) nothing changed".dimmed());
+        } else if result.conversion {
+            println!(
+                "  {}",
+                "Sparse-checkout enabled: this device now keeps only subscribed projects.".dimmed()
+            );
+        }
 
-    if !result.dropped.is_empty() {
-        println!(
-            "  {}",
-            format!("Dropped from working tree: {}", result.dropped.join(", ")).dimmed()
-        );
-    }
+        if !result.dropped.is_empty() {
+            println!(
+                "  {}",
+                format!("Dropped from working tree: {}", result.dropped.join(", ")).dimmed()
+            );
+        }
 
-    if result.subscribed.is_empty() {
-        println!(
-            "  {}",
-            "No project subscriptions left on this device.".dimmed()
-        );
-    } else if result.subscribed.len() == 1 {
-        println!("  {} subscription\n", 1.to_string().cyan());
-    } else {
-        println!(
-            "  {} subscriptions\n",
-            result.subscribed.len().to_string().cyan()
-        );
+        if result.subscribed.is_empty() {
+            println!(
+                "  {}",
+                "No project subscriptions left on this device.".dimmed()
+            );
+        } else {
+            println!(
+                "  {} subscriptions\n",
+                result.subscribed.len().to_string().cyan()
+            );
+        }
     }
 
     Ok(())

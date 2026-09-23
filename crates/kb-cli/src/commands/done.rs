@@ -5,7 +5,7 @@ use std::process::Command;
 
 use kb_core::{discovery, state};
 
-pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, _quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     // 1. Load in-progress projects
@@ -21,7 +21,7 @@ pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, _quiet: bo
                 }
             });
             println!("{}", serde_json::to_string_pretty(&output)?);
-        } else {
+        } else if !quiet {
             println!();
             println!("  {}", "Nothing to push.".dimmed());
             println!("  No projects in progress.");
@@ -83,7 +83,7 @@ pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, _quiet: bo
                 }
             });
             println!("{}", serde_json::to_string_pretty(&output)?);
-        } else {
+        } else if !quiet {
             println!();
             println!("  {}", "No changes to commit.".dimmed());
             println!("  Projects: {}", work_state.active_projects.join(", "));
@@ -154,7 +154,7 @@ pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, _quiet: bo
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!(
             "  {} {}",

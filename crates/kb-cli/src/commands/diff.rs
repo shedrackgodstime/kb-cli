@@ -6,7 +6,7 @@ use kb_core::config;
 use kb_core::discovery;
 use kb_core::git;
 
-pub fn run(kb_root: Option<&Path>, since: Option<&str>, json: bool, _quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, since: Option<&str>, json: bool, quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let _cfg = config::load()?;
     let since_ref = since.unwrap_or("HEAD~1");
@@ -30,7 +30,7 @@ pub fn run(kb_root: Option<&Path>, since: Option<&str>, json: bool, _quiet: bool
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {} {}", "Changes since".bold(), since_ref.bold());
         println!("  {} commits", commits.len());

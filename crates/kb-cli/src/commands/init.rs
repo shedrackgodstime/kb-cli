@@ -5,18 +5,18 @@ use std::process::Command;
 
 use kb_core::{config, discovery, paths, platform, project};
 
-pub fn run(kb_root: Option<&Path>, json: bool, _quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, json: bool, quiet: bool) -> Result<()> {
     // Try to discover existing KB root
     let discovery = discovery::discover_kb_root(kb_root);
 
     match discovery {
         Ok((root, source)) => {
             // KB already exists — just configure it
-            configure_existing(&root, source, json, _quiet)
+            configure_existing(&root, source, json, quiet)
         }
         Err(_) => {
             // No KB found — offer to clone or create
-            setup_new_machine(kb_root, json, _quiet)
+            setup_new_machine(kb_root, json, quiet)
         }
     }
 }
@@ -26,7 +26,7 @@ fn configure_existing(
     root: &Path,
     source: discovery::DiscoverySource,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     // 1. Write config
     config::update(|cfg| {
@@ -57,7 +57,7 @@ fn configure_existing(
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {} kb — knowledge-base manager", "KB".bold().cyan());
         println!();
@@ -103,7 +103,7 @@ fn configure_existing(
 }
 
 /// Setup on a fresh machine — clone or create the knowledge-base.
-fn setup_new_machine(kb_root: Option<&Path>, json: bool, _quiet: bool) -> Result<()> {
+fn setup_new_machine(kb_root: Option<&Path>, json: bool, quiet: bool) -> Result<()> {
     let home = paths::home_dir()?;
     let default_path = home.join("knowledge-base");
 
@@ -120,7 +120,7 @@ fn setup_new_machine(kb_root: Option<&Path>, json: bool, _quiet: bool) -> Result
                 ]
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {} kb — knowledge-base manager", "KB".bold().cyan());
         println!();

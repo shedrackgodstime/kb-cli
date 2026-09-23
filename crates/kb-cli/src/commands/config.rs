@@ -3,23 +3,23 @@ use colored::Colorize;
 
 use kb_core::config::{self as core_config, ConfigKey, ConfigValue};
 
-pub fn run_list(json: bool, _quiet: bool) -> Result<()> {
-    list(json)
+pub fn run_list(json: bool, quiet: bool) -> Result<()> {
+    list(json, quiet)
 }
 
-pub fn run_get(json: bool, key: &str, _quiet: bool) -> Result<()> {
-    get(key, json)
+pub fn run_get(json: bool, key: &str, quiet: bool) -> Result<()> {
+    get(key, json, quiet)
 }
 
-pub fn run_set(json: bool, key: &str, value: &str, _quiet: bool) -> Result<()> {
-    set(key, value, json)
+pub fn run_set(json: bool, key: &str, value: &str, quiet: bool) -> Result<()> {
+    set(key, value, json, quiet)
 }
 
-pub fn run_unset(json: bool, key: &str, _quiet: bool) -> Result<()> {
-    unset(key, json)
+pub fn run_unset(json: bool, key: &str, quiet: bool) -> Result<()> {
+    unset(key, json, quiet)
 }
 
-fn list(json: bool) -> Result<()> {
+fn list(json: bool, quiet: bool) -> Result<()> {
     let config = core_config::load()?;
     let path = core_config::config_path()?;
 
@@ -35,26 +35,28 @@ fn list(json: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!();
-    println!("  {} ~/.kb config", "Config".bold().green(),);
-    println!();
-    println!("  {} {}", "file".dimmed(), path.display());
-    println!();
-    print_key(ConfigKey::KbRoot, &config);
-    print_key(ConfigKey::ActiveProjects, &config);
+    if !quiet {
+        println!();
+        println!("  {} ~/.kb config", "Config".bold().green(),);
+        println!();
+        println!("  {} {}", "file".dimmed(), path.display());
+        println!();
+        print_key(ConfigKey::KbRoot, &config);
+        print_key(ConfigKey::ActiveProjects, &config);
 
-    let mut names: Vec<&String> = config.projects.keys().collect();
-    names.sort();
-    for name in names {
-        print_key(ConfigKey::ProjectRepoPath(name.clone()), &config);
-        print_key(ConfigKey::ProjectCloneDepth(name.clone()), &config);
+        let mut names: Vec<&String> = config.projects.keys().collect();
+        names.sort();
+        for name in names {
+            print_key(ConfigKey::ProjectRepoPath(name.clone()), &config);
+            print_key(ConfigKey::ProjectCloneDepth(name.clone()), &config);
+        }
+        println!();
     }
-    println!();
 
     Ok(())
 }
 
-fn get(key: &str, json: bool) -> Result<()> {
+fn get(key: &str, json: bool, quiet: bool) -> Result<()> {
     let parsed = core_config::parse_config_key(key)?;
     let config = core_config::load()?;
     let value = core_config::get_key(&config, &parsed);
@@ -71,28 +73,30 @@ fn get(key: &str, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!();
-    match &value {
-        ConfigValue::Path(Some(p)) => println!("  {} = {}", key.bold(), p.display()),
-        ConfigValue::Path(None) => println!("  {} = {}", key.bold(), "(unset)".dimmed()),
-        ConfigValue::Strings(items) if items.is_empty() => {
-            println!("  {} = {}", key.bold(), "(none)".dimmed())
+    if !quiet {
+        println!();
+        match &value {
+            ConfigValue::Path(Some(p)) => println!("  {} = {}", key.bold(), p.display()),
+            ConfigValue::Path(None) => println!("  {} = {}", key.bold(), "(unset)".dimmed()),
+            ConfigValue::Strings(items) if items.is_empty() => {
+                println!("  {} = {}", key.bold(), "(none)".dimmed())
+            }
+            ConfigValue::Strings(items) => {
+                println!(
+                    "  {} = {}",
+                    key.bold(),
+                    serde_json::to_string(items)?.dimmed()
+                )
+            }
+            ConfigValue::U32(depth) => println!("  {} = {}", key.bold(), depth),
         }
-        ConfigValue::Strings(items) => {
-            println!(
-                "  {} = {}",
-                key.bold(),
-                serde_json::to_string(items)?.dimmed()
-            )
-        }
-        ConfigValue::U32(depth) => println!("  {} = {}", key.bold(), depth),
+        println!();
     }
-    println!();
 
     Ok(())
 }
 
-fn set(key: &str, value: &str, json: bool) -> Result<()> {
+fn set(key: &str, value: &str, json: bool, quiet: bool) -> Result<()> {
     let parsed = core_config::parse_config_key(key)?;
     let mut config = core_config::load()?;
     core_config::set_key(&mut config, &parsed, value)?;
@@ -112,21 +116,23 @@ fn set(key: &str, value: &str, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    let display = match get_key_value(&config, &parsed) {
-        ConfigValue::Path(Some(p)) => p.display().to_string(),
-        ConfigValue::Strings(items) => serde_json::to_string(&items)?,
-        ConfigValue::U32(depth) => depth.to_string(),
-        ConfigValue::Path(None) => value.to_string(),
-    };
-    println!();
-    println!("  {} {} {}", "Set".green().bold(), key.bold(), display);
-    println!("  └ {}", path.display().to_string().dimmed());
-    println!();
+    if !quiet {
+        let display = match get_key_value(&config, &parsed) {
+            ConfigValue::Path(Some(p)) => p.display().to_string(),
+            ConfigValue::Strings(items) => serde_json::to_string(&items)?,
+            ConfigValue::U32(depth) => depth.to_string(),
+            ConfigValue::Path(None) => value.to_string(),
+        };
+        println!();
+        println!("  {} {} {}", "Set".green().bold(), key.bold(), display);
+        println!("  └ {}", path.display().to_string().dimmed());
+        println!();
+    }
 
     Ok(())
 }
 
-fn unset(key: &str, json: bool) -> Result<()> {
+fn unset(key: &str, json: bool, quiet: bool) -> Result<()> {
     let parsed = core_config::parse_config_key(key)?;
     let mut config = core_config::load()?;
     core_config::unset_key(&mut config, &parsed);
@@ -145,14 +151,16 @@ fn unset(key: &str, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!();
-    println!("  {} {}", "Unset".yellow().bold(), key.bold());
-    println!();
-    println!(
-        "  {}",
-        "key removed from config (or reset to default).".dimmed()
-    );
-    println!();
+    if !quiet {
+        println!();
+        println!("  {} {}", "Unset".yellow().bold(), key.bold());
+        println!();
+        println!(
+            "  {}",
+            "key removed from config (or reset to default).".dimmed()
+        );
+        println!();
+    }
 
     Ok(())
 }

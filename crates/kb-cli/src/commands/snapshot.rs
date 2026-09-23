@@ -5,7 +5,7 @@ use std::path::Path;
 use kb_core::discovery;
 use kb_core::git;
 
-pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, _quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     let output_dir = root.join("archive");
@@ -28,7 +28,7 @@ pub fn run(kb_root: Option<&Path>, message: Option<&str>, json: bool, _quiet: bo
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {} {}", "Snapshot".bold().green(), "created.".bold());
         println!("  {}", msg);

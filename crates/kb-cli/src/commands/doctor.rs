@@ -4,13 +4,13 @@ use std::path::Path;
 
 use kb_core::{discovery, doctor};
 
-pub fn run(kb_root: Option<&Path>, fix: bool, json: bool, _quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, fix: bool, json: bool, quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     let before = doctor::run_all(&root)?;
 
     if !fix {
-        print_report(&before.checks, json)?;
+        print_report(&before.checks, json, quiet)?;
         return Ok(());
     }
 
@@ -49,10 +49,10 @@ pub fn run(kb_root: Option<&Path>, fix: bool, json: bool, _quiet: bool) -> Resul
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {}", "Doctor Results (before fixes)".bold().cyan());
-        print_issues(&before.checks);
+        print_issues(&before.checks, quiet);
         println!();
         println!("  {}", "Fixes applied".bold().cyan());
         let mut fixed_count = 0;
@@ -73,8 +73,8 @@ pub fn run(kb_root: Option<&Path>, fix: bool, json: bool, _quiet: bool) -> Resul
         );
         println!();
         println!("  {}", "Doctor Results (after fixes)".bold().cyan());
-        print_issues(&after.checks);
-        print_summary(&after.checks);
+        print_issues(&after.checks, quiet);
+        print_summary(&after.checks, quiet);
         println!();
     }
 
@@ -82,7 +82,7 @@ pub fn run(kb_root: Option<&Path>, fix: bool, json: bool, _quiet: bool) -> Resul
 }
 
 /// Pretty-print a full check report (all severities).
-fn print_report(checks: &[doctor::Check], json: bool) -> Result<()> {
+fn print_report(checks: &[doctor::Check], json: bool, quiet: bool) -> Result<()> {
     if json {
         let checks_json: Vec<_> = checks
             .iter()
@@ -103,18 +103,18 @@ fn print_report(checks: &[doctor::Check], json: bool) -> Result<()> {
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {}", "Doctor Results".bold().cyan());
-        print_issues(checks);
-        print_summary(checks);
+        print_issues(checks, quiet);
+        print_summary(checks, quiet);
         println!();
     }
     Ok(())
 }
 
 /// Pretty-print only the failing (Warn/Error) checks.
-fn print_issues(checks: &[doctor::Check]) {
+fn print_issues(checks: &[doctor::Check], quiet: bool) {
     for check in checks {
         if check.severity == doctor::Severity::Pass {
             continue;
@@ -125,18 +125,30 @@ fn print_issues(checks: &[doctor::Check]) {
             ("⚠", "yellow")
         };
         match color {
-            "red" => println!("  {} {}", symbol.red().bold(), check.name),
-            _ => println!("  {} {}", symbol.yellow().bold(), check.name),
+            "red" => {
+                if !quiet {
+                    println!("  {} {}", symbol.red().bold(), check.name);
+                }
+            }
+            _ => {
+                if !quiet {
+                    println!("  {} {}", symbol.yellow().bold(), check.name);
+                }
+            }
         }
-        println!("    └ {}", check.message);
-        if let Some(fix) = &check.fix {
+        if !quiet {
+            println!("    └ {}", check.message);
+        }
+        if let Some(fix) = &check.fix
+            && !quiet
+        {
             println!("      fix: {}", fix.dimmed());
         }
     }
 }
 
 /// Pretty-print the pass/warn/error summary line.
-fn print_summary(checks: &[doctor::Check]) {
+fn print_summary(checks: &[doctor::Check], quiet: bool) {
     let pass_count = checks
         .iter()
         .filter(|c| c.severity == doctor::Severity::Pass)
@@ -149,10 +161,12 @@ fn print_summary(checks: &[doctor::Check]) {
         .iter()
         .filter(|c| c.severity == doctor::Severity::Error)
         .count();
-    println!(
-        "  Summary: {} passed, {} warnings, {} errors",
-        pass_count.to_string().green(),
-        warn_count.to_string().yellow(),
-        error_count.to_string().red(),
-    );
+    if !quiet {
+        println!(
+            "  Summary: {} passed, {} warnings, {} errors",
+            pass_count.to_string().green(),
+            warn_count.to_string().yellow(),
+            error_count.to_string().red(),
+        );
+    }
 }

@@ -9,7 +9,7 @@ pub fn run(
     tarball: &Path,
     name: Option<&str>,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     let imported_name = sync::import_project(kb_root, tarball, name)?;
 
@@ -22,7 +22,7 @@ pub fn run(
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {} {}", "Imported".bold().green(), imported_name.bold());
         println!(

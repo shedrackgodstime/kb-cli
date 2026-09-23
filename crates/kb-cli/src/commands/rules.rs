@@ -13,7 +13,7 @@ pub fn run(
     all: bool,
     dry_run: bool,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let templates_dir = root.join("templates").join("project");
@@ -75,9 +75,13 @@ pub fn run(
 
     println!();
     if dry_run {
-        println!("  {} kb-rules.md map (dry run)", "Rules".bold().green());
+        if !quiet {
+            println!("  {} kb-rules.md map (dry run)", "Rules".bold().green());
+        }
     } else {
-        println!("  {} kb-rules.md map", "Rules".bold().green());
+        if !quiet {
+            println!("  {} kb-rules.md map", "Rules".bold().green());
+        }
     }
     println!();
 
@@ -89,44 +93,48 @@ pub fn run(
             KbRulesAction::NotFound => ("!".red().bold(), "repo not found".red()),
         };
         let dest = result.dest.display();
-        println!("  {} {}  {}", mark, result.project_name.bold(), label);
-        println!("  {}  {}", "  └".dimmed(), dest);
+        if !quiet {
+            println!("  {} {}  {}", mark, result.project_name.bold(), label);
+            println!("  {}  {}", "  └".dimmed(), dest);
+        }
     }
 
-    println!();
-    let created = results
-        .iter()
-        .filter(|r| r.action == KbRulesAction::Created)
-        .count();
-    let up_to_date = results
-        .iter()
-        .filter(|r| r.action == KbRulesAction::UpToDate)
-        .count();
-    let skipped = results
-        .iter()
-        .filter(|r| r.action == KbRulesAction::Skipped)
-        .count();
-    let not_found = results
-        .iter()
-        .filter(|r| r.action == KbRulesAction::NotFound)
-        .count();
-    let written_label = if dry_run {
-        "would be written"
-    } else {
-        "written"
-    };
-    println!(
-        "  {} {} · {} up to date · {} skipped · {} not found",
-        created, written_label, up_to_date, skipped, not_found,
-    );
-    if created > 0 {
+    if !quiet {
         println!();
+        let created = results
+            .iter()
+            .filter(|r| r.action == KbRulesAction::Created)
+            .count();
+        let up_to_date = results
+            .iter()
+            .filter(|r| r.action == KbRulesAction::UpToDate)
+            .count();
+        let skipped = results
+            .iter()
+            .filter(|r| r.action == KbRulesAction::Skipped)
+            .count();
+        let not_found = results
+            .iter()
+            .filter(|r| r.action == KbRulesAction::NotFound)
+            .count();
+        let written_label = if dry_run {
+            "would be written"
+        } else {
+            "written"
+        };
         println!(
-            "  {} Attach kb-rules.md in prompts (e.g. @kb-rules.md) so agents load KB context.",
-            "ℹ".blue()
+            "  {} {} · {} up to date · {} skipped · {} not found",
+            created, written_label, up_to_date, skipped, not_found,
         );
+        if created > 0 {
+            println!();
+            println!(
+                "  {} Attach kb-rules.md in prompts (e.g. @kb-rules.md) so agents load KB context.",
+                "ℹ".blue()
+            );
+        }
+        println!();
     }
-    println!();
 
     Ok(())
 }

@@ -10,7 +10,7 @@ pub fn run(
     stat: bool,
     projects: &[String],
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     let opts = log::LogOptions {
         limit,
@@ -47,9 +47,11 @@ pub fn run(
     }
 
     if result.entries.is_empty() {
-        println!();
-        println!("  {}", "No commits found.".dimmed());
-        println!();
+        if !quiet {
+            println!();
+            println!("  {}", "No commits found.".dimmed());
+            println!();
+        }
         return Ok(());
     }
 
@@ -59,20 +61,22 @@ pub fn run(
         format!("project(s) {}", projects.join(", "))
     };
 
-    println!();
-    println!("  {} {}", "Recent commits in".dimmed(), scope.bold());
-    println!();
+    if !quiet {
+        println!();
+        println!("  {} {}", "Recent commits in".dimmed(), scope.bold());
+        println!();
 
-    if result.stat {
-        for line in result.raw.lines() {
-            println!("  {line}");
+        if result.stat {
+            for line in result.raw.lines() {
+                println!("  {line}");
+            }
+        } else {
+            for entry in &result.entries {
+                println!("  {} {}", entry.hash.yellow().bold(), entry.subject);
+            }
         }
-    } else {
-        for entry in &result.entries {
-            println!("  {} {}", entry.hash.yellow().bold(), entry.subject);
-        }
+        println!();
     }
-    println!();
 
     Ok(())
 }

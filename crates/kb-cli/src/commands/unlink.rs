@@ -10,7 +10,7 @@ pub fn run(
     project_input: &str,
     keep_gitignore: bool,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
@@ -32,7 +32,7 @@ pub fn run(
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {} {}", "Unlinking".bold().yellow(), project_name.bold());
 

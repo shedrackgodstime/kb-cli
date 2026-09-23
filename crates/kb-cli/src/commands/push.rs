@@ -9,7 +9,7 @@ pub fn run(
     projects: &[String],
     message: Option<&str>,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     if projects.is_empty() {
         anyhow::bail!(
@@ -32,7 +32,7 @@ pub fn run(
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
 
         if !result.committed {

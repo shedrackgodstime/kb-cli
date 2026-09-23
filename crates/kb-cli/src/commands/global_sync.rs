@@ -10,7 +10,7 @@ pub fn run(
     link: bool,
     dry_run: bool,
     json: bool,
-    _quiet: bool,
+    quiet: bool,
 ) -> Result<()> {
     let result = sync::global_sync(kb_root, message, link, dry_run)?;
 
@@ -56,7 +56,7 @@ pub fn run(
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!(
             "  {} {}",

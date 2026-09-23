@@ -4,7 +4,7 @@ use std::path::Path;
 
 use kb_core::{discovery, paths, project, state, sync};
 
-pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool, _quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool, quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
 
     // 1. Git sync (pull --rebase)
@@ -36,7 +36,7 @@ pub fn run(kb_root: Option<&Path>, project_name: &str, json: bool, _quiet: bool)
             }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {} {}", "Working on".bold().cyan(), project_name.bold());
         println!();

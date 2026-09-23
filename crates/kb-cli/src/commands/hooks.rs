@@ -5,7 +5,7 @@ use std::path::Path;
 use kb_core::config;
 use kb_core::discovery;
 
-pub fn run(kb_root: Option<&Path>, command: HooksCommand, json: bool, _quiet: bool) -> Result<()> {
+pub fn run(kb_root: Option<&Path>, command: HooksCommand, json: bool, quiet: bool) -> Result<()> {
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let _cfg = config::load()?;
 
@@ -13,24 +13,24 @@ pub fn run(kb_root: Option<&Path>, command: HooksCommand, json: bool, _quiet: bo
     std::fs::create_dir_all(&hooks_dir)?;
 
     match command {
-        HooksCommand::List => run_list(&hooks_dir, json),
+        HooksCommand::List => run_list(&hooks_dir, json, quiet),
         HooksCommand::Add {
             point,
             command: cmd,
             project,
-        } => run_add(&hooks_dir, &point, &cmd, project.as_deref(), json),
+        } => run_add(&hooks_dir, &point, &cmd, project.as_deref(), json, quiet),
         HooksCommand::Remove {
             point,
             project,
             index: _,
-        } => run_remove(&hooks_dir, &point, project.as_deref(), json),
+        } => run_remove(&hooks_dir, &point, project.as_deref(), json, quiet),
         HooksCommand::Run { point, project } => {
-            run_hook(&hooks_dir, &point, project.as_deref(), json)
+            run_hook(&hooks_dir, &point, project.as_deref(), json, quiet)
         }
     }
 }
 
-fn run_list(hooks_dir: &Path, json: bool) -> Result<()> {
+fn run_list(hooks_dir: &Path, json: bool, quiet: bool) -> Result<()> {
     let hooks = load_hooks(hooks_dir)?;
 
     if json {
@@ -39,7 +39,7 @@ fn run_list(hooks_dir: &Path, json: bool) -> Result<()> {
             "data": { "hooks": hooks }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {} {}", "Hooks".bold().blue(), "configured:".bold());
         println!();
@@ -62,6 +62,7 @@ fn run_add(
     command: &str,
     project: Option<&str>,
     json: bool,
+    quiet: bool,
 ) -> Result<()> {
     let valid_points = [
         "pre-sync",
@@ -93,7 +94,7 @@ fn run_add(
             "data": { "index": index, "point": point, "command": command }
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!(
             "  {} hook to {} at index {}",
@@ -106,7 +107,13 @@ fn run_add(
     Ok(())
 }
 
-fn run_remove(hooks_dir: &Path, point: &str, project: Option<&str>, json: bool) -> Result<()> {
+fn run_remove(
+    hooks_dir: &Path,
+    point: &str,
+    project: Option<&str>,
+    json: bool,
+    quiet: bool,
+) -> Result<()> {
     let mut hooks = load_hooks(hooks_dir)?;
     hooks.retain(|h| h.point != point || h.project.as_deref() != project);
     save_hooks(hooks_dir, &hooks)?;
@@ -114,7 +121,7 @@ fn run_remove(hooks_dir: &Path, point: &str, project: Option<&str>, json: bool) 
     if json {
         let output = serde_json::json!({ "ok": true, "data": { "point": point, "removed": true } });
         println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
+    } else if !quiet {
         println!();
         println!("  {} hooks for {}", "Removed".bold().red(), point);
         println!();
@@ -122,7 +129,13 @@ fn run_remove(hooks_dir: &Path, point: &str, project: Option<&str>, json: bool) 
     Ok(())
 }
 
-fn run_hook(hooks_dir: &Path, point: &str, project: Option<&str>, _json: bool) -> Result<()> {
+fn run_hook(
+    hooks_dir: &Path,
+    point: &str,
+    project: Option<&str>,
+    _json: bool,
+    quiet: bool,
+) -> Result<()> {
     let hooks = load_hooks(hooks_dir)?;
     let matching: Vec<_> = hooks
         .iter()
@@ -130,12 +143,16 @@ fn run_hook(hooks_dir: &Path, point: &str, project: Option<&str>, _json: bool) -
         .collect();
 
     if matching.is_empty() {
-        println!("  {} No hooks configured for {}", "Info:".dimmed(), point);
+        if !quiet {
+            println!("  {} No hooks configured for {}", "Info:".dimmed(), point);
+        }
         return Ok(());
     }
 
     for hook in &matching {
-        println!("  {} {}", "Running".bold(), hook.command);
+        if !quiet {
+            println!("  {} {}", "Running".bold(), hook.command);
+        }
         let output = std::process::Command::new("sh")
             .arg("-c")
             .arg(&hook.command)
