@@ -1,6 +1,6 @@
 [package]
 name = "kb"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "Cross-platform CLI for managing the knowledge-base ecosystem"
 
@@ -14,6 +14,7 @@ clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 clap_mangen = "0.2"
 anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
 colored = "2"
 dirs = "5"
 serde = { version = "1", features = ["derive"] }

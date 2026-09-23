@@ -68,6 +68,20 @@ enum Commands {
         restore: bool,
     },
 
+    /// Create a local snapshot (checkpoint) of the knowledge-base without pushing
+    Snapshot {
+        /// Custom commit message (default: timestamped)
+        #[arg(long, short)]
+        message: Option<String>,
+    },
+
+    /// Summarize KB changes since a git ref with a human-readable breakdown
+    Diff {
+        /// Git ref to compare against (default: HEAD~1)
+        #[arg(long, short)]
+        since: Option<String>,
+    },
+
     /// Open a project's KB directory (or the knowledge-base root) in your
     /// editor or file manager
     Open {
@@ -296,6 +310,12 @@ enum Commands {
         dry_run: bool,
     },
 
+    /// Manage pre/post hooks for sync, global-sync, and link operations
+    Hooks {
+        #[command(subcommand)]
+        command: commands::hooks::HooksCommand,
+    },
+
     /// Inspect and edit machine-local configuration
     Config {
         #[command(subcommand)]
@@ -330,7 +350,7 @@ enum ConfigCommand {
     },
 }
 
-#[derive(clap::ValueEnum, Clone)]
+#[derive(clap::ValueEnum, Clone, Copy)]
 #[allow(clippy::enum_variant_names)]
 enum Shell {
     Bash,
@@ -656,6 +676,21 @@ fn main() -> anyhow::Result<()> {
             project.as_deref(),
             all,
             dry_run,
+            cli.json,
+            cli.quiet,
+        ),
+        Commands::Hooks { command } => {
+            commands::hooks::run(cli.kb_root.as_deref(), command, cli.json, cli.quiet)
+        }
+        Commands::Snapshot { message } => commands::snapshot::run(
+            cli.kb_root.as_deref(),
+            message.as_deref(),
+            cli.json,
+            cli.quiet,
+        ),
+        Commands::Diff { since } => commands::diff::run(
+            cli.kb_root.as_deref(),
+            since.as_deref(),
             cli.json,
             cli.quiet,
         ),
