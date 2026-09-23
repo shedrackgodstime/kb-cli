@@ -195,7 +195,7 @@ pub fn check_refs_status(kb_root: &Path, project_name: &str) -> Result<Vec<RefSt
 }
 
 /// Clone a missing ref and checkout the pinned revision.
-pub fn clone_ref(entry: &RefEntry, target_dir: &Path, shallow: bool) -> Result<()> {
+pub fn clone_ref(entry: &RefEntry, target_dir: &Path, depth: u32) -> Result<()> {
     // Create parent if needed
     if let Some(parent) = target_dir.parent() {
         fs::create_dir_all(parent)?;
@@ -210,8 +210,8 @@ pub fn clone_ref(entry: &RefEntry, target_dir: &Path, shallow: bool) -> Result<(
     let mut cmd = Command::new("git");
     cmd.arg("clone");
 
-    if shallow {
-        cmd.arg("--depth").arg("1");
+    if depth > 0 {
+        cmd.arg("--depth").arg(depth.to_string());
     }
 
     cmd.arg(&entry.url).arg(target_dir);

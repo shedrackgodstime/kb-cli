@@ -16,9 +16,6 @@ pub fn run(
     json: bool,
     quiet: bool,
 ) -> Result<()> {
-    // --full wins over --shallow; default is full clone (shallow=false)
-    let do_shallow = shallow && !full;
-
     let (root, _) = discovery::discover_kb_root(kb_root)?;
     let cfg = config::load()?;
 
@@ -50,6 +47,20 @@ pub fn run(
         return Ok(());
     }
 
+    // Determine clone depth per project: CLI flags override config
+    let get_depth = |project_name: &str| -> u32 {
+        if shallow {
+            1
+        } else if full {
+            0
+        } else {
+            cfg.projects
+                .get(project_name)
+                .map(|p| p.clone_depth)
+                .unwrap_or(0)
+        }
+    };
+
     let mut all_project_outputs = vec![];
 
     for project_name in &projects {
@@ -72,6 +83,8 @@ pub fn run(
         }
 
         let statuses = refs::check_refs_status(&root, project_name)?;
+
+        let depth = get_depth(project_name);
 
         let mut total_cloned = 0;
         let mut total_uptodate = 0;
@@ -121,7 +134,7 @@ pub fn run(
                         }
                         total_cloned += 1;
                     } else if json {
-                        match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
+                        match refs::clone_ref(&status.entry, &status.local_path, depth) {
                             Ok(()) => total_cloned += 1,
                             Err(e) => total_errors.push(format!("{}: {}", status.entry.name, e)),
                         }
@@ -129,7 +142,7 @@ pub fn run(
                         if !quiet {
                             print!("  {} {} ", "→".cyan(), status.entry.name.bold());
                         }
-                        match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
+                        match refs::clone_ref(&status.entry, &status.local_path, depth) {
                             Ok(()) => {
                                 println!("{}", "cloned".green());
                                 total_cloned += 1;
@@ -166,7 +179,7 @@ pub fn run(
                                 );
                             }
                         } else if json {
-                            match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
+                            match refs::clone_ref(&status.entry, &status.local_path, depth) {
                                 Ok(()) => total_cloned += 1,
                                 Err(e) => {
                                     total_errors.push(format!("{}: {}", status.entry.name, e))
@@ -176,7 +189,7 @@ pub fn run(
                             if !quiet {
                                 print!("  {} {} ", "!".yellow().bold(), status.entry.name.bold());
                             }
-                            match refs::clone_ref(&status.entry, &status.local_path, do_shallow) {
+                            match refs::clone_ref(&status.entry, &status.local_path, depth) {
                                 Ok(()) => {
                                     println!("{}", "re-cloned".green());
                                     total_cloned += 1;
