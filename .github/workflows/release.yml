@@ -90,6 +90,8 @@ jobs:
         with:
           name: kb-${{ matrix.target }}
           path: kb-${{ github.ref_name }}-${{ matrix.target }}.*
+          # Duplicated into the GitHub Release in the same run; short record only.
+          retention-days: 3
 
   release:
     name: Create Release
